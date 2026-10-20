@@ -1,991 +1,1017 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <!-- viewport-fit=cover를 추가하면 노치나 하단 바 영역까지 자연스럽게 꽉 찹니다 -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>날짜별 누적 AI 영양 성분 계산기</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; }
-        .progress-bar { transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
-    </style>
-
-    <!-- 모바일 웹앱 / PWA 설정 (추가된 위치) -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#059669">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="영양계산기">
-    <link rel="apple-touch-icon" href="icon-192.png">
-</head>
-<body class="text-slate-800">
-
-    <!-- Header -->
-    <header class="bg-white border-b border-slate-200 sticky top-0 z-20">
-        <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
-            <div class="flex items-center gap-2">
-                <i data-lucide="flame" class="text-emerald-600 w-7 h-7"></i>
-                <h1 class="text-xl font-bold text-slate-900">AI 식단 & 영양 기록장</h1>
-                <span id="saveStatus" class="text-[11px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md flex items-center gap-1 transition">
-                    <i data-lucide="check-circle-2" class="w-3 h-3 text-emerald-500"></i> 자동 저장됨
-                </span>
-            </div>
-
-            <!-- Date Navigator -->
-            <div class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
-                <button onclick="shiftDate(-1)" class="p-1.5 hover:bg-white rounded-lg text-slate-600 transition" title="이전 날짜">
-                    <i data-lucide="chevron-left" class="w-4 h-4"></i>
-                </button>
-                <input type="date" id="datePicker" onchange="onDatePick(this.value)" 
-                    class="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer">
-                <button onclick="shiftDate(1)" class="p-1.5 hover:bg-white rounded-lg text-slate-600 transition" title="다음 날짜">
-                    <i data-lucide="chevron-right" class="w-4 h-4"></i>
-                </button>
-                <button onclick="goToday()" id="todayBtn" class="text-xs font-semibold bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-700 transition ml-1">
-                    오늘
-                </button>
-            </div>
-
-            <div class="flex items-center gap-2 text-sm">
-                <label for="apiKey" class="font-medium text-slate-600 hidden sm:inline">Gemini API 키:</label>
-                <input type="password" id="apiKey" oninput="saveDataToStorage()" placeholder="AI 분석용 API 키 입력" 
-                    class="border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 w-40 sm:w-48 text-xs">
-                <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-emerald-600 hover:underline text-xs flex items-center gap-1">
-                    발급 <i data-lucide="external-link" class="w-3 h-3"></i>
-                </a>
-            </div>
-        </div>
-    </header>
-
-    <!-- Main Content -->
-    <main class="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        <!-- Left Column: Profile & Input Section (5 cols) -->
-        <div class="lg:col-span-5 space-y-6">
-
-            <!-- 1. Personal Profile & Auto Goal Calculator -->
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="font-bold text-slate-900 flex items-center gap-2">
-                        <i data-lucide="user-check" class="w-5 h-5 text-emerald-600"></i> 내 신체 정보 및 맞춤 권장량
-                    </h2>
-                    <button onclick="setStandardGoals()" class="text-xs text-slate-400 hover:text-emerald-600 underline">
-                        식약처 표준(2000kcal) 적용
-                    </button>
-                </div>
-
-                <!-- Gender & Diet Goal -->
-                <div class="grid grid-cols-2 gap-3 mb-3">
-                    <div>
-                        <label class="block text-xs font-medium text-slate-500 mb-1">성별</label>
-                        <div class="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-lg text-xs font-semibold">
-                            <button type="button" id="btn-male" onclick="setGender('male')" class="py-1.5 rounded-md bg-white text-emerald-700 shadow-sm transition">남성</button>
-                            <button type="button" id="btn-female" onclick="setGender('female')" class="py-1.5 rounded-md text-slate-600 hover:text-slate-900 transition">여성</button>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-slate-500 mb-1">식단 목표</label>
-                        <select id="p-purpose" onchange="calculateCustomGoals()" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                            <option value="-500">체중 감량 (-500 kcal)</option>
-                            <option value="0" selected>체중 유지 (±0 kcal)</option>
-                            <option value="300">근육 증량 (+300 kcal)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Age, Height, Weight -->
-                <div class="grid grid-cols-3 gap-3 mb-3">
-                    <div>
-                        <label class="block text-xs font-medium text-slate-500 mb-1">나이 (만 나이)</label>
-                        <input type="number" id="p-age" value="30" min="10" max="100" oninput="calculateCustomGoals()" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-slate-500 mb-1">키 (cm)</label>
-                        <input type="number" id="p-height" value="173" min="100" max="230" oninput="calculateCustomGoals()" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-slate-500 mb-1">몸무게 (kg)</label>
-                        <input type="number" id="p-weight" value="70" min="30" max="200" oninput="calculateCustomGoals()" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                    </div>
-                </div>
-
-                <!-- Activity Level -->
-                <div class="mb-4">
-                    <label class="block text-xs font-medium text-slate-500 mb-1">평소 활동량</label>
-                    <select id="p-activity" onchange="calculateCustomGoals()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-medium bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                        <option value="1.2">비활동적 (주로 좌식 생활, 운동 거의 안 함)</option>
-                        <option value="1.375">가벼운 활동 (주 1~3회 가벼운 운동/산책)</option>
-                        <option value="1.55" selected>보통 활동 (주 3~5회 중간 강도 운동)</option>
-                        <option value="1.725">적극적 활동 (주 6~7회 고강도 운동 또는 육체노동)</option>
-                    </select>
-                </div>
-
-                <!-- BMR & TDEE Summary Box -->
-                <div class="bg-emerald-50/70 border border-emerald-100 rounded-xl p-3 mb-4 flex justify-around text-center">
-                    <div>
-                        <span class="block text-[11px] text-slate-500">기초대사량 (BMR)</span>
-                        <strong id="bmrDisplay" class="text-sm font-bold text-slate-800">1,641 kcal</strong>
-                    </div>
-                    <div class="border-r border-emerald-200"></div>
-                    <div>
-                        <span class="block text-[11px] text-slate-500">유지 칼로리 (TDEE)</span>
-                        <strong id="tdeeDisplay" class="text-sm font-bold text-slate-800">2,544 kcal</strong>
-                    </div>
-                    <div class="border-r border-emerald-200"></div>
-                    <div>
-                        <span class="block text-[11px] text-emerald-700 font-semibold">내 목표 칼로리</span>
-                        <strong id="targetCalDisplay" class="text-sm font-extrabold text-emerald-600">2,544 kcal</strong>
-                    </div>
-                </div>
-
-                <!-- Editable Calculated Goals -->
-                <details class="group text-xs">
-                    <summary class="cursor-pointer font-semibold text-slate-500 hover:text-slate-700 flex items-center justify-between py-1">
-                        <span>🎯 계산된 일일 목표 영양소 상세 (직접 수정 가능)</span>
-                        <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
-                    </summary>
-                    <div class="grid grid-cols-3 gap-2 pt-3 mt-2 border-t border-slate-100">
-                        <div>
-                            <span class="text-slate-500">목표 열량(kcal)</span>
-                            <input type="number" id="goal-cal" value="2544" oninput="onManualGoalChange()" class="w-full border border-slate-200 rounded p-1.5 font-semibold mt-0.5">
-                        </div>
-                        <div>
-                            <span class="text-slate-500">탄수화물(g)</span>
-                            <input type="number" id="goal-carb" value="318" oninput="onManualGoalChange()" class="w-full border border-slate-200 rounded p-1.5 font-semibold mt-0.5">
-                        </div>
-                        <div>
-                            <span class="text-slate-500">단백질(g)</span>
-                            <input type="number" id="goal-pro" value="159" oninput="onManualGoalChange()" class="w-full border border-slate-200 rounded p-1.5 font-semibold mt-0.5">
-                        </div>
-                        <div>
-                            <span class="text-slate-500">지방(g)</span>
-                            <input type="number" id="goal-fat" value="71" oninput="onManualGoalChange()" class="w-full border border-slate-200 rounded p-1.5 font-semibold mt-0.5">
-                        </div>
-                        <div>
-                            <span class="text-slate-500">당류 상한(g)</span>
-                            <input type="number" id="goal-sugar" value="64" oninput="onManualGoalChange()" class="w-full border border-slate-200 rounded p-1.5 font-semibold mt-0.5">
-                        </div>
-                        <div>
-                            <span class="text-slate-500">나트륨 상한(mg)</span>
-                            <input type="number" id="goal-na" value="2000" oninput="onManualGoalChange()" class="w-full border border-slate-200 rounded p-1.5 font-semibold mt-0.5">
-                        </div>
-                    </div>
-                </details>
-            </div>
-            
-            <!-- 2. Food Input Tabs -->
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <div class="flex border-b border-slate-200 mb-6">
-                    <button onclick="switchTab('ai')" id="tab-ai" class="flex-1 py-2.5 text-center font-semibold border-b-2 border-emerald-600 text-emerald-600">
-                        📸 사진 / 텍스트 AI 입력
-                    </button>
-                    <button onclick="switchTab('manual')" id="tab-manual" class="flex-1 py-2.5 text-center font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700">
-                        ✏️ 직접 수치 입력
-                    </button>
-                </div>
-
-                <!-- AI Input Mode -->
-                <div id="mode-ai" class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">음식 사진 업로드</label>
-                        <div class="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center hover:border-emerald-500 transition cursor-pointer relative" onclick="document.getElementById('imageInput').click()">
-                            <input type="file" id="imageInput" accept="image/*" class="hidden" onchange="previewImage(event)">
-                            <div id="imagePreviewContainer" class="hidden mb-2">
-                                <img id="imagePreview" class="max-h-40 mx-auto rounded-lg object-cover">
-                            </div>
-                            <div id="uploadPlaceholder" class="py-4 text-slate-500">
-                                <i data-lucide="camera" class="w-8 h-8 mx-auto mb-2 text-slate-400"></i>
-                                <p class="text-sm">클릭하여 음식 사진을 업로드하세요</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">음식 설명 텍스트</label>
-                        <textarea id="textInput" rows="2" placeholder="예: 김치찌개 1인분이랑 공기밥 반 공기, 계란후라이 1개" 
-                            class="w-full border border-slate-300 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
-                    </div>
-
-                    <button onclick="analyzeWithAI()" id="analyzeBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2 shadow-sm">
-                        <i data-lucide="sparkles" class="w-5 h-5"></i> 선택된 날짜에 AI 분석 추가
-                    </button>
-
-                    <!-- Quick Presets -->
-                    <div class="pt-4 border-t border-slate-100">
-                        <p class="text-xs font-semibold text-slate-400 uppercase mb-2">빠른 추가 프리셋 (API 키 불필요)</p>
-                        <div class="flex flex-wrap gap-1.5">
-                            <button onclick="addPreset('닭가슴살 샐러드', 320, 15, 38, 12, 4, 450)" class="text-xs bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 px-2.5 py-1.5 rounded-lg transition">+ 🥗 닭가슴살 샐러드</button>
-                            <button onclick="addPreset('김치찌개와 밥 1공기', 650, 78, 28, 22, 8, 1650)" class="text-xs bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 px-2.5 py-1.5 rounded-lg transition">+ 🍲 김치찌개 정식</button>
-                            <button onclick="addPreset('아메리카노 & 조각케이크', 410, 48, 5, 22, 32, 180)" class="text-xs bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 px-2.5 py-1.5 rounded-lg transition">+ 🍰 케이크 & 커피</button>
-                            <button onclick="addPreset('삶은 계란 2개', 155, 1.1, 13, 11, 1, 124)" class="text-xs bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 px-2.5 py-1.5 rounded-lg transition">+ 🥚 삶은 계란 2개</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Manual Input Mode -->
-                <div id="mode-manual" class="hidden space-y-3">
-                    <div>
-                        <label class="block text-xs font-medium text-slate-600 mb-1">음식 이름</label>
-                        <input type="text" id="m-name" placeholder="예: 프로틴 바" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="block text-xs font-medium text-slate-600 mb-1">칼로리 (kcal)</label>
-                            <input type="number" id="m-cal" value="0" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-slate-600 mb-1">탄수화물 (g)</label>
-                            <input type="number" id="m-carb" value="0" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-slate-600 mb-1">단백질 (g)</label>
-                            <input type="number" id="m-pro" value="0" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-slate-600 mb-1">지방 (g)</label>
-                            <input type="number" id="m-fat" value="0" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-slate-600 mb-1">당류 (g)</label>
-                            <input type="number" id="m-sugar" value="0" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-slate-600 mb-1">나트륨 (mg)</label>
-                            <input type="number" id="m-na" value="0" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-                        </div>
-                    </div>
-                    <button onclick="addManualItem()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-semibold py-3 rounded-xl transition mt-2">
-                        선택된 날짜 식단에 추가
-                    </button>
-                </div>
-            </div>
-
-        </div>
-
-        <!-- Right Column: Real-time Dashboard & History (7 cols) -->
-        <div class="lg:col-span-7 space-y-6">
-            
-            <!-- 1. Daily Dashboard Card -->
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <div class="flex flex-wrap justify-between items-center gap-2 mb-6">
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <span id="selectedDateBadge" class="bg-slate-800 text-white text-xs font-bold px-2.5 py-1 rounded-md">오늘</span>
-                            <h2 class="text-lg font-bold text-slate-900">권장량 대비 섭취 현황</h2>
-                        </div>
-                        <p id="profileSummaryText" class="text-xs text-slate-500 mt-1">남성 · 30세 · 173cm · 70kg 기준 맞춤 목표치</p>
-                    </div>
-                    <span id="totalCalBadge" class="bg-emerald-100 text-emerald-800 text-sm font-bold px-3.5 py-1.5 rounded-full">
-                        0 / 2,544 kcal
-                    </span>
-                </div>
-
-                <!-- Gauges Grid -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-                    
-                    <!-- Progress Bars -->
-                    <div class="space-y-4" id="gaugesContainer"></div>
-
-                    <!-- Macro Ratio Chart -->
-                    <div class="flex flex-col items-center justify-center p-4 bg-slate-50 rounded-xl border border-slate-100">
-                        <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">섭취 탄·단·지 칼로리 비율</h3>
-                        <div class="w-44 h-44 relative">
-                            <canvas id="macroChart"></canvas>
-                        </div>
-                        <div id="macroLegend" class="text-xs text-slate-500 mt-3 text-center">
-                            음식을 추가하면 비율이 표시됩니다.
-                        </div>
-                        <div class="text-[11px] text-slate-400 mt-1">
-                            (권장 비율 가이드: 탄 50% · 단 25% · 지 25%)
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-
-            <!-- 2. Logged Foods List for Selected Date -->
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="font-bold text-slate-800 flex items-center gap-2">
-                        <i data-lucide="utensils" class="w-4 h-4 text-emerald-600"></i>
-                        <span id="listDateTitle">오늘의 섭취 목록</span>
-                    </h2>
-                    <div class="flex gap-3">
-                        <button onclick="clearCurrentDateItems()" class="text-xs text-rose-500 hover:underline">이 날짜 식단 비우기</button>
-                        <button onclick="resetAllStorage()" class="text-xs text-slate-400 hover:text-slate-600 underline">전체 초기화</button>
-                    </div>
-                </div>
-                <div id="foodList" class="divide-y divide-slate-100 text-sm"></div>
-            </div>
-
-            <!-- 3. 7-Day Calorie History Chart -->
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <div class="flex justify-between items-center mb-4">
-                    <div>
-                        <h2 class="font-bold text-slate-800 flex items-center gap-2">
-                            <i data-lucide="calendar-days" class="w-4 h-4 text-emerald-600"></i> 최근 7일 칼로리 섭취 추이
-                        </h2>
-                        <p class="text-xs text-slate-500">선택된 날짜를 기준으로 최근 일주일간의 누적 기록입니다. (막대를 클릭하면 해당 날짜로 이동)</p>
-                    </div>
-                    <div class="flex items-center gap-3 text-xs text-slate-500">
-                        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block"></span>목표 이내</span>
-                        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block"></span>목표 초과</span>
-                    </div>
-                </div>
-                <div class="h-48 w-full">
-                    <canvas id="weeklyChart"></canvas>
-                </div>
-            </div>
-
-        </div>
-    </main>
-
-    <script>
-        lucide.createIcons();
-
-        const STORAGE_KEY = 'nutrition_calculator_data_v4';
-        let currentGender = 'male';
-        
-        // 날짜별 식단 저장 객체: { "2026-10-20": [ {id, name, cal, ...}, ... ] }
-        let dailyRecords = {};
-        let selectedDate = getLocalTodayStr();
-
-        let base64Image = null;
-        let imageMimeType = null;
-        let macroChartInstance = null;
-        let weeklyChartInstance = null;
-
-        // 로컬 시간 기준 YYYY-MM-DD 반환
-        function getLocalTodayStr() {
-            const now = new Date();
-            const offset = now.getTimezoneOffset() * 60000;
-            return new Date(now.getTime() - offset).toISOString().split('T')[0];
-        }
-
-        // 현재 선택된 날짜의 음식 배열 가져오기
-        function getCurrentFoodList() {
-            if (!dailyRecords[selectedDate]) {
-                dailyRecords[selectedDate] = [];
-            }
-            return dailyRecords[selectedDate];
-        }
-
-        // ==========================================
-        // 1. 날짜 이동 (달력 네비게이션)
-        // ==========================================
-        function shiftDate(days) {
-            const parts = selectedDate.split('-').map(Number);
-            const dt = new Date(parts[0], parts[1] - 1, parts[2]);
-            dt.setDate(dt.getDate() + days);
-            const offset = dt.getTimezoneOffset() * 60000;
-            selectedDate = new Date(dt.getTime() - offset).toISOString().split('T')[0];
-            syncDateUI();
-        }
-
-        function onDatePick(val) {
-            if (!val) return;
-            selectedDate = val;
-            syncDateUI();
-        }
-
-        function goToday() {
-            selectedDate = getLocalTodayStr();
-            syncDateUI();
-        }
-
-        function syncDateUI() {
-            document.getElementById('datePicker').value = selectedDate;
-            const todayStr = getLocalTodayStr();
-            const isToday = (selectedDate === todayStr);
-
-            const badge = document.getElementById('selectedDateBadge');
-            const listTitle = document.getElementById('listDateTitle');
-
-            if (isToday) {
-                badge.textContent = '오늘';
-                badge.className = 'bg-emerald-600 text-white text-xs font-bold px-2.5 py-1 rounded-md';
-                listTitle.textContent = `오늘의 섭취 목록 (${selectedDate})`;
-            } else {
-                badge.textContent = selectedDate;
-                badge.className = 'bg-slate-800 text-white text-xs font-bold px-2.5 py-1 rounded-md';
-                listTitle.textContent = `${selectedDate} 섭취 목록`;
-            }
-
-            updateUI(false);
-        }
-
-        // ==========================================
-        // 2. LocalStorage 저장 및 불러오기 (v3 호환 포함)
-        // ==========================================
-        function saveDataToStorage() {
-            const dataToSave = {
-                apiKey: document.getElementById('apiKey').value,
-                profile: {
-                    gender: currentGender,
-                    age: document.getElementById('p-age').value,
-                    height: document.getElementById('p-height').value,
-                    weight: document.getElementById('p-weight').value,
-                    activity: document.getElementById('p-activity').value,
-                    purpose: document.getElementById('p-purpose').value,
-                    summaryText: document.getElementById('profileSummaryText').textContent
-                },
-                goals: {
-                    cal: document.getElementById('goal-cal').value,
-                    carb: document.getElementById('goal-carb').value,
-                    pro: document.getElementById('goal-pro').value,
-                    fat: document.getElementById('goal-fat').value,
-                    sugar: document.getElementById('goal-sugar').value,
-                    na: document.getElementById('goal-na').value
-                },
-                dailyRecords: dailyRecords
-            };
-
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
-            showSaveIndicator();
-        }
-
-        function loadDataFromStorage() {
-            document.getElementById('datePicker').value = selectedDate;
-            let savedRaw = localStorage.getItem(STORAGE_KEY);
-
-            // 이전 버전(v3) 데이터가 있으면 자동 마이그레이션
-            if (!savedRaw) {
-                const v3Raw = localStorage.getItem('nutrition_calculator_data_v3');
-                if (v3Raw) {
-                    try {
-                        const v3Data = JSON.parse(v3Raw);
-                        v3Data.dailyRecords = {};
-                        if (Array.isArray(v3Data.foodItems) && v3Data.foodItems.length > 0) {
-                            v3Data.dailyRecords[selectedDate] = v3Data.foodItems;
-                        }
-                        savedRaw = JSON.stringify(v3Data);
-                    } catch (e) {}
-                }
-            }
-
-            if (!savedRaw) {
-                calculateCustomGoals();
-                syncDateUI();
-                return;
-            }
-
-            try {
-                const parsed = JSON.parse(savedRaw);
-
-                if (parsed.apiKey) document.getElementById('apiKey').value = parsed.apiKey;
-
-                if (parsed.profile) {
-                    currentGender = parsed.profile.gender || 'male';
-                    updateGenderButtons();
-                    document.getElementById('p-age').value = parsed.profile.age || 30;
-                    document.getElementById('p-height').value = parsed.profile.height || 173;
-                    document.getElementById('p-weight').value = parsed.profile.weight || 70;
-                    document.getElementById('p-activity').value = parsed.profile.activity || '1.55';
-                    document.getElementById('p-purpose').value = parsed.profile.purpose || '0';
-                    if (parsed.profile.summaryText) {
-                        document.getElementById('profileSummaryText').textContent = parsed.profile.summaryText;
-                    }
-                }
-
-                updateBmrSummaryOnly();
-
-                if (parsed.goals) {
-                    document.getElementById('goal-cal').value = parsed.goals.cal || 2000;
-                    document.getElementById('goal-carb').value = parsed.goals.carb || 324;
-                    document.getElementById('goal-pro').value = parsed.goals.pro || 55;
-                    document.getElementById('goal-fat').value = parsed.goals.fat || 54;
-                    document.getElementById('goal-sugar').value = parsed.goals.sugar || 100;
-                    document.getElementById('goal-na').value = parsed.goals.na || 2000;
-                }
-
-                if (parsed.dailyRecords && typeof parsed.dailyRecords === 'object') {
-                    dailyRecords = parsed.dailyRecords;
-                }
-
-                syncDateUI();
-            } catch (e) {
-                console.error('저장된 데이터 불러오기 실패:', e);
-                calculateCustomGoals();
-            }
-        }
-
-        function resetAllStorage() {
-            if (!confirm('모든 날짜의 식단 기록과 신체 설정을 완전히 초기화할까요?')) return;
-            localStorage.removeItem(STORAGE_KEY);
-            location.reload();
-        }
-
-        function showSaveIndicator() {
-            const el = document.getElementById('saveStatus');
-            el.classList.add('text-emerald-600', 'bg-emerald-50');
-            setTimeout(() => {
-                el.classList.remove('text-emerald-600', 'bg-emerald-50');
-            }, 600);
-        }
-
-        // ==========================================
-        // 3. 신체 프로필 및 목표 계산 로직
-        // ==========================================
-        function updateGenderButtons() {
-            const isMale = currentGender === 'male';
-            document.getElementById('btn-male').className = isMale
-                ? 'py-1.5 rounded-md bg-white text-emerald-700 shadow-sm transition'
-                : 'py-1.5 rounded-md text-slate-600 hover:text-slate-900 transition';
-            document.getElementById('btn-female').className = !isMale
-                ? 'py-1.5 rounded-md bg-white text-emerald-700 shadow-sm transition'
-                : 'py-1.5 rounded-md text-slate-600 hover:text-slate-900 transition';
-        }
-
-        function setGender(gender) {
-            currentGender = gender;
-            updateGenderButtons();
-            calculateCustomGoals();
-        }
-
-        function updateBmrSummaryOnly() {
-            const age = parseFloat(document.getElementById('p-age').value) || 30;
-            const height = parseFloat(document.getElementById('p-height').value) || 170;
-            const weight = parseFloat(document.getElementById('p-weight').value) || 65;
-            const activity = parseFloat(document.getElementById('p-activity').value) || 1.55;
-            const purposeOffset = parseFloat(document.getElementById('p-purpose').value) || 0;
-
-            let bmr = (10 * weight) + (6.25 * height) - (5 * age);
-            bmr += (currentGender === 'male') ? 5 : -161;
-            bmr = Math.round(bmr);
-
-            const tdee = Math.round(bmr * activity);
-            const targetCal = Math.max(1000, tdee + purposeOffset);
-
-            document.getElementById('bmrDisplay').textContent = `${bmr.toLocaleString()} kcal`;
-            document.getElementById('tdeeDisplay').textContent = `${tdee.toLocaleString()} kcal`;
-            document.getElementById('targetCalDisplay').textContent = `${targetCal.toLocaleString()} kcal`;
-            return { bmr, tdee, targetCal, age, height, weight };
-        }
-
-        function calculateCustomGoals() {
-            const { targetCal, age, height, weight } = updateBmrSummaryOnly();
-
-            const targetCarb = Math.round((targetCal * 0.50) / 4);
-            const targetPro = Math.round((targetCal * 0.25) / 4);
-            const targetFat = Math.round((targetCal * 0.25) / 9);
-            const targetSugar = Math.round((targetCal * 0.10) / 4);
-
-            document.getElementById('goal-cal').value = targetCal;
-            document.getElementById('goal-carb').value = targetCarb;
-            document.getElementById('goal-pro').value = targetPro;
-            document.getElementById('goal-fat').value = targetFat;
-            document.getElementById('goal-sugar').value = targetSugar;
-            document.getElementById('goal-na').value = 2000;
-
-            const genderKor = currentGender === 'male' ? '남성' : '여성';
-            document.getElementById('profileSummaryText').textContent = 
-                `${genderKor} · ${age}세 · ${height}cm · ${weight}kg 맞춤 권장량 적용 중`;
-
-            updateUI(true);
-        }
-
-        function onManualGoalChange() {
-            document.getElementById('profileSummaryText').textContent = '사용자 직접 수정 목표치 적용 중';
-            updateUI(true);
-        }
-
-        function setStandardGoals() {
-            document.getElementById('goal-cal').value = 2000;
-            document.getElementById('goal-carb').value = 324;
-            document.getElementById('goal-pro').value = 55;
-            document.getElementById('goal-fat').value = 54;
-            document.getElementById('goal-sugar').value = 100;
-            document.getElementById('goal-na').value = 2000;
-            document.getElementById('profileSummaryText').textContent = '식약처 표준 1일 영양성분 기준치 (2,000kcal) 적용 중';
-            updateUI(true);
-        }
-
-        // ==========================================
-        // 4. 음식 추가 및 AI 분석 로직 (선택된 날짜에 저장)
-        // ==========================================
-        function switchTab(mode) {
-            const isAI = mode === 'ai';
-            document.getElementById('mode-ai').classList.toggle('hidden', !isAI);
-            document.getElementById('mode-manual').classList.toggle('hidden', isAI);
-            
-            document.getElementById('tab-ai').className = isAI 
-                ? 'flex-1 py-2.5 text-center font-semibold border-b-2 border-emerald-600 text-emerald-600'
-                : 'flex-1 py-2.5 text-center font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700';
-            document.getElementById('tab-manual').className = !isAI 
-                ? 'flex-1 py-2.5 text-center font-semibold border-b-2 border-emerald-600 text-emerald-600'
-                : 'flex-1 py-2.5 text-center font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700';
-        }
-
-        function previewImage(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            imageMimeType = file.type;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                document.getElementById('imagePreview').src = e.target.result;
-                document.getElementById('imagePreviewContainer').classList.remove('hidden');
-                document.getElementById('uploadPlaceholder').classList.add('hidden');
-                base64Image = e.target.result.split(',')[1];
-            };
-            reader.readAsDataURL(file);
-        }
-
-        function addPreset(name, cal, carb, pro, fat, sugar, na) {
-            getCurrentFoodList().push({ id: Date.now(), name, cal, carb, pro, fat, sugar, na });
-            updateUI(true);
-        }
-
-        function addManualItem() {
-            const name = document.getElementById('m-name').value.trim() || '직접 입력한 음식';
-            const cal = parseFloat(document.getElementById('m-cal').value) || 0;
-            const carb = parseFloat(document.getElementById('m-carb').value) || 0;
-            const pro = parseFloat(document.getElementById('m-pro').value) || 0;
-            const fat = parseFloat(document.getElementById('m-fat').value) || 0;
-            const sugar = parseFloat(document.getElementById('m-sugar').value) || 0;
-            const na = parseFloat(document.getElementById('m-na').value) || 0;
-
-            getCurrentFoodList().push({ id: Date.now(), name, cal, carb, pro, fat, sugar, na });
-            document.getElementById('m-name').value = '';
-            updateUI(true);
-        }
-
-        function removeItem(id) {
-            dailyRecords[selectedDate] = getCurrentFoodList().filter(item => item.id !== id);
-            updateUI(true);
-        }
-
-        function clearCurrentDateItems() {
-            dailyRecords[selectedDate] = [];
-            updateUI(true);
-        }
-
-        async function analyzeWithAI() {
-            const apiKey = document.getElementById('apiKey').value.trim();
-            const textInput = document.getElementById('textInput').value.trim();
-
-            if (!base64Image && !textInput) {
-                alert('음식 사진을 업로드하거나 텍스트 설명을 입력해주세요!');
-                return;
-            }
-
-            if (!apiKey) {
-                alert('우측 상단에 Gemini API 키를 입력해주세요.\nAPI 키가 없다면 하단의 [빠른 추가 프리셋]이나 [직접 수치 입력] 탭을 이용할 수 있습니다.');
-                return;
-            }
-
-            const btn = document.getElementById('analyzeBtn');
-            const originalText = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> AI가 영양 성분을 분석 중입니다...`;
-            lucide.createIcons();
-
-            try {
-                const prompt = `다음 음식(사진 또는 텍스트)의 영양 성분을 분석해서 반드시 아래 JSON 형식으로만 응답해줘. 마크다운 코드블록 없이 순수 JSON만 반환해.
-                {
-                    "name": "음식 이름 요약 (한국어)",
-                    "cal": 열량(kcal, 숫자),
-                    "carb": 탄수화물(g, 숫자),
-                    "pro": 단백질(g, 숫자),
-                    "fat": 지방(g, 숫자),
-                    "sugar": 당류(g, 숫자),
-                    "na": 나트륨(mg, 숫자)
-                }
-                추가 설명 텍스트: ${textInput || '없음'}`;
-
-                const parts = [{ text: prompt }];
-                if (base64Image) {
-                    parts.push({
-                        inline_data: { mime_type: imageMimeType, data: base64Image }
-                    });
-                }
-
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts }],
-                        generationConfig: { responseMimeType: "application/json" }
-                    })
-                });
-
-                const data = await response.json();
-                if (data.error) throw new Error(data.error.message);
-
-                const resultText = data.candidates[0].content.parts[0].text;
-                const parsed = JSON.parse(resultText);
-
-                getCurrentFoodList().push({
-                    id: Date.now(),
-                    name: parsed.name || 'AI 분석 음식',
-                    cal: Number(parsed.cal) || 0,
-                    carb: Number(parsed.carb) || 0,
-                    pro: Number(parsed.pro) || 0,
-                    fat: Number(parsed.fat) || 0,
-                    sugar: Number(parsed.sugar) || 0,
-                    na: Number(parsed.na) || 0
-                });
-
-                document.getElementById('textInput').value = '';
-                document.getElementById('imageInput').value = '';
-                document.getElementById('imagePreviewContainer').classList.add('hidden');
-                document.getElementById('uploadPlaceholder').classList.remove('hidden');
-                base64Image = null;
-
-                updateUI(true);
-
-            } catch (error) {
-                alert('AI 분석 중 오류가 발생했습니다: ' + error.message);
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = originalText;
-                lucide.createIcons();
-            }
-        }
-
-        // ==========================================
-        // 5. 대시보드 및 주간 히스토리 차트 업데이트
-        // ==========================================
-        function updateUI(shouldSave = true) {
-            const goals = {
-                cal: parseFloat(document.getElementById('goal-cal').value) || 2000,
-                carb: parseFloat(document.getElementById('goal-carb').value) || 324,
-                pro: parseFloat(document.getElementById('goal-pro').value) || 55,
-                fat: parseFloat(document.getElementById('goal-fat').value) || 54,
-                sugar: parseFloat(document.getElementById('goal-sugar').value) || 100,
-                na: parseFloat(document.getElementById('goal-na').value) || 2000
-            };
-
-            const currentList = getCurrentFoodList();
-
-            const totals = currentList.reduce((acc, item) => {
-                acc.cal += item.cal;
-                acc.carb += item.carb;
-                acc.pro += item.pro;
-                acc.fat += item.fat;
-                acc.sugar += item.sugar;
-                acc.na += item.na;
-                return acc;
-            }, { cal: 0, carb: 0, pro: 0, fat: 0, sugar: 0, na: 0 });
-
-            document.getElementById('totalCalBadge').textContent = `${Math.round(totals.cal).toLocaleString()} / ${goals.cal.toLocaleString()} kcal`;
-
-            const metrics = [
-                { key: 'cal', label: '열량 (칼로리)', unit: 'kcal', val: totals.cal, goal: goals.cal },
-                { key: 'carb', label: '탄수화물', unit: 'g', val: totals.carb, goal: goals.carb },
-                { key: 'pro', label: '단백질', unit: 'g', val: totals.pro, goal: goals.pro },
-                { key: 'fat', label: '지방', unit: 'g', val: totals.fat, goal: goals.fat },
-                { key: 'sugar', label: '당류', unit: 'g', val: totals.sugar, goal: goals.sugar },
-                { key: 'na', label: '나트륨', unit: 'mg', val: totals.na, goal: goals.na }
-            ];
-
-            const gaugesHTML = metrics.map(m => {
-                const percent = Math.round((m.val / m.goal) * 100);
-                const barWidth = Math.min(percent, 100);
-                
-                let colorClass = 'bg-emerald-500';
-                let textClass = 'text-emerald-600';
-                if (percent > 100) {
-                    colorClass = 'bg-rose-500';
-                    textClass = 'text-rose-600 font-bold';
-                } else if (percent >= 80) {
-                    colorClass = 'bg-amber-500';
-                    textClass = 'text-amber-600';
-                }
-
-                return `
-                    <div>
-                        <div class="flex justify-between text-xs mb-1">
-                            <span class="font-semibold text-slate-700">${m.label}</span>
-                            <span>
-                                <strong class="text-slate-900">${Math.round(m.val * 10) / 10}${m.unit}</strong> 
-                                <span class="text-slate-400">/ ${m.goal}${m.unit}</span>
-                                <span class="ml-1 ${textClass}">(${percent}%)</span>
-                            </span>
-                        </div>
-                        <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                            <div class="${colorClass} h-2.5 rounded-full progress-bar" style="width: ${barWidth}%"></div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            document.getElementById('gaugesContainer').innerHTML = gaugesHTML;
-
-            const listContainer = document.getElementById('foodList');
-            if (currentList.length === 0) {
-                listContainer.innerHTML = `<p class="text-slate-400 text-center py-6">${selectedDate}에 기록된 음식이 없습니다. 왼쪽에서 음식을 추가해보세요!</p>`;
-            } else {
-                listContainer.innerHTML = currentList.map(item => `
-                    <div class="py-3 flex justify-between items-center">
-                        <div>
-                            <p class="font-semibold text-slate-800">${item.name}</p>
-                            <p class="text-xs text-slate-500">
-                                탄 ${item.carb}g · 단 ${item.pro}g · 지 ${item.fat}g · 당 ${item.sugar}g · 나트륨 ${item.na}mg
-                            </p>
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <span class="font-bold text-emerald-700">${item.cal} kcal</span>
-                            <button onclick="removeItem(${item.id})" class="text-slate-400 hover:text-rose-500 p-1">
-                                <i data-lucide="trash-2" class="w-4 h-4"></i>
-                            </button>
-                        </div>
-                    </div>
-                `).join('');
-                lucide.createIcons();
-            }
-
-            updateMacroChart(totals.carb * 4, totals.pro * 4, totals.fat * 9);
-            updateWeeklyChart(goals.cal);
-
-            if (shouldSave) {
-                saveDataToStorage();
-            }
-        }
-
-        function updateMacroChart(carbCal, proCal, fatCal) {
-            const totalMacroCal = carbCal + proCal + fatCal;
-            const ctx = document.getElementById('macroChart').getContext('2d');
-
-            const dataValues = totalMacroCal > 0 ? [carbCal, proCal, fatCal] : [1, 1, 1];
-            const bgColors = totalMacroCal > 0 
-                ? ['#3b82f6', '#10b981', '#f59e0b'] 
-                : ['#e2e8f0', '#e2e8f0', '#e2e8f0'];
-
-            if (macroChartInstance) {
-                macroChartInstance.data.datasets[0].data = dataValues;
-                macroChartInstance.data.datasets[0].backgroundColor = bgColors;
-                macroChartInstance.update();
-            } else {
-                macroChartInstance = new Chart(ctx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: ['탄수화물', '단백질', '지방'],
-                        datasets: [{
-                            data: dataValues,
-                            backgroundColor: bgColors,
-                            borderWidth: 0
-                        }]
-                    },
-                    options: {
-                        cutout: '70%',
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: { enabled: totalMacroCal > 0 }
-                        }
-                    }
-                });
-            }
-
-            const legendEl = document.getElementById('macroLegend');
-            if (totalMacroCal > 0) {
-                const cRatio = Math.round((carbCal / totalMacroCal) * 100);
-                const pRatio = Math.round((proCal / totalMacroCal) * 100);
-                const fRatio = 100 - cRatio - pRatio;
-                legendEl.innerHTML = `
-                    <span class="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1"></span>탄 ${cRatio}% 
-                    <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 ml-2 mr-1"></span>단 ${pRatio}% 
-                    <span class="inline-block w-2 h-2 rounded-full bg-amber-500 ml-2 mr-1"></span>지 ${fRatio}%
-                `;
-            } else {
-                legendEl.textContent = '음식을 추가하면 비율이 표시됩니다.';
-            }
-        }
-
-        // 최근 7일간의 칼로리 추이 막대 차트
-        function updateWeeklyChart(goalCal) {
-            const labels = [];
-            const fullDates = [];
-            const calData = [];
-            const barColors = [];
-
-            const parts = selectedDate.split('-').map(Number);
-            const baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
-
-            for (let i = 6; i >= 0; i--) {
-                const d = new Date(baseDate);
-                d.setDate(d.getDate() - i);
-                const offset = d.getTimezoneOffset() * 60000;
-                const dStr = new Date(d.getTime() - offset).toISOString().split('T')[0];
-                
-                fullDates.push(dStr);
-                labels.push(dStr.slice(5)); // MM-DD 표시
-
-                const dayItems = dailyRecords[dStr] || [];
-                const dayCal = dayItems.reduce((sum, item) => sum + item.cal, 0);
-                calData.push(Math.round(dayCal));
-
-                if (dayCal > goalCal) {
-                    barColors.push('#f43f5e'); // 목표 초과 (Rose)
-                } else if (dStr === selectedDate) {
-                    barColors.push('#059669'); // 현재 선택된 날짜 강조 (Dark Emerald)
-                } else {
-                    barColors.push('#34d399'); // 일반 목표 이내 (Light Emerald)
-                }
-            }
-
-            const ctx = document.getElementById('weeklyChart').getContext('2d');
-
-            if (weeklyChartInstance) {
-                weeklyChartInstance.data.labels = labels;
-                weeklyChartInstance.data.datasets[0].data = calData;
-                weeklyChartInstance.data.datasets[0].backgroundColor = barColors;
-                weeklyChartInstance.options.onClick = (e, elements) => {
-                    if (elements.length > 0) {
-                        const idx = elements[0].index;
-                        onDatePick(fullDates[idx]);
-                    }
-                };
-                weeklyChartInstance.update();
-            } else {
-                weeklyChartInstance = new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            label: '섭취 칼로리 (kcal)',
-                            data: calData,
-                            backgroundColor: barColors,
-                            borderRadius: 6,
-                            maxBarThickness: 36
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        onClick: (e, elements) => {
-                            if (elements.length > 0) {
-                                const idx = elements[0].index;
-                                onDatePick(fullDates[idx]);
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                suggestedMax: goalCal * 1.2,
-                                grid: { color: '#f1f5f9' }
-                            },
-                            x: {
-                                grid: { display: false }
-                            }
-                        },
-                        plugins: {
-                            legend: { display: false }
-                        }
-                    }
-                });
-            }
-        }
-
-        // 페이지 로드 시 실행
-        loadDataFromStorage();
-    </script>
-</body>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <!-- viewport-fit=cover를 추가하면 노치나 하단 바 영역까지 자연스럽게 꽉 찹니다 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>날짜별 누적 AI 영양 성분 계산기</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; }
+        .progress-bar { transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+
+    <!-- 모바일 웹앱 / PWA 설정 (추가된 위치) -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#059669">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="영양계산기">
+    <link rel="apple-touch-icon" href="icon-192.png">
+</head>
+<body class="text-slate-800">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-20">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center gap-2">
+                <i data-lucide="flame" class="text-emerald-600 w-7 h-7"></i>
+                <h1 class="text-xl font-bold text-slate-900">AI 식단 & 영양 기록장</h1>
+                <span id="saveStatus" class="text-[11px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md flex items-center gap-1 transition">
+                    <i data-lucide="check-circle-2" class="w-3 h-3 text-emerald-500"></i> 자동 저장됨
+                </span>
+            </div>
+
+            <!-- Date Navigator -->
+            <div class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <button onclick="shiftDate(-1)" class="p-1.5 hover:bg-white rounded-lg text-slate-600 transition" title="이전 날짜">
+                    <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                </button>
+                <input type="date" id="datePicker" onchange="onDatePick(this.value)" 
+                    class="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer">
+                <button onclick="shiftDate(1)" class="p-1.5 hover:bg-white rounded-lg text-slate-600 transition" title="다음 날짜">
+                    <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                </button>
+                <button onclick="goToday()" id="todayBtn" class="text-xs font-semibold bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-700 transition ml-1">
+                    오늘
+                </button>
+            </div>
+
+            <div class="flex items-center gap-2 text-sm">
+                <label for="apiKey" class="font-medium text-slate-600 hidden sm:inline">Gemini API 키:</label>
+                <input type="password" id="apiKey" oninput="saveDataToStorage()" placeholder="AI 분석용 API 키 입력" 
+                    class="border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 w-40 sm:w-48 text-xs">
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-emerald-600 hover:underline text-xs flex items-center gap-1">
+                    발급 <i data-lucide="external-link" class="w-3 h-3"></i>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        <!-- Left Column: Profile & Input Section (5 cols) -->
+        <div class="lg:col-span-5 space-y-6">
+
+            <!-- 1. Personal Profile & Auto Goal Calculator -->
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="font-bold text-slate-900 flex items-center gap-2">
+                        <i data-lucide="user-check" class="w-5 h-5 text-emerald-600"></i> 내 신체 정보 및 맞춤 권장량
+                    </h2>
+                    <button onclick="setStandardGoals()" class="text-xs text-slate-400 hover:text-emerald-600 underline">
+                        식약처 표준(2000kcal) 적용
+                    </button>
+                </div>
+
+                <!-- Gender & Diet Goal -->
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">성별</label>
+                        <div class="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-lg text-xs font-semibold">
+                            <button type="button" id="btn-male" onclick="setGender('male')" class="py-1.5 rounded-md bg-white text-emerald-700 shadow-sm transition">남성</button>
+                            <button type="button" id="btn-female" onclick="setGender('female')" class="py-1.5 rounded-md text-slate-600 hover:text-slate-900 transition">여성</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">식단 목표</label>
+                        <select id="p-purpose" onchange="calculateCustomGoals()" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <option value="-500">체중 감량 (-500 kcal)</option>
+                            <option value="0" selected>체중 유지 (±0 kcal)</option>
+                            <option value="300">근육 증량 (+300 kcal)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Age, Height, Weight -->
+                <div class="grid grid-cols-3 gap-3 mb-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">나이 (만 나이)</label>
+                        <input type="number" id="p-age" value="30" min="10" max="100" oninput="calculateCustomGoals()" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">키 (cm)</label>
+                        <input type="number" id="p-height" value="173" min="100" max="230" oninput="calculateCustomGoals()" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">몸무게 (kg)</label>
+                        <input type="number" id="p-weight" value="70" min="30" max="200" oninput="calculateCustomGoals()" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                </div>
+
+                <!-- Activity Level -->
+                <div class="mb-4">
+                    <label class="block text-xs font-medium text-slate-500 mb-1">평소 활동량</label>
+                    <select id="p-activity" onchange="calculateCustomGoals()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-medium bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <option value="1.2">비활동적 (주로 좌식 생활, 운동 거의 안 함)</option>
+                        <option value="1.375">가벼운 활동 (주 1~3회 가벼운 운동/산책)</option>
+                        <option value="1.55" selected>보통 활동 (주 3~5회 중간 강도 운동)</option>
+                        <option value="1.725">적극적 활동 (주 6~7회 고강도 운동 또는 육체노동)</option>
+                    </select>
+                </div>
+
+                <!-- BMR & TDEE Summary Box -->
+                <div class="bg-emerald-50/70 border border-emerald-100 rounded-xl p-3 mb-4 flex justify-around text-center">
+                    <div>
+                        <span class="block text-[11px] text-slate-500">기초대사량 (BMR)</span>
+                        <strong id="bmrDisplay" class="text-sm font-bold text-slate-800">1,641 kcal</strong>
+                    </div>
+                    <div class="border-r border-emerald-200"></div>
+                    <div>
+                        <span class="block text-[11px] text-slate-500">유지 칼로리 (TDEE)</span>
+                        <strong id="tdeeDisplay" class="text-sm font-bold text-slate-800">2,544 kcal</strong>
+                    </div>
+                    <div class="border-r border-emerald-200"></div>
+                    <div>
+                        <span class="block text-[11px] text-emerald-700 font-semibold">내 목표 칼로리</span>
+                        <strong id="targetCalDisplay" class="text-sm font-extrabold text-emerald-600">2,544 kcal</strong>
+                    </div>
+                </div>
+
+                <!-- Editable Calculated Goals -->
+                <details class="group text-xs">
+                    <summary class="cursor-pointer font-semibold text-slate-500 hover:text-slate-700 flex items-center justify-between py-1">
+                        <span>🎯 계산된 일일 목표 영양소 상세 (직접 수정 가능)</span>
+                        <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
+                    </summary>
+                    <div class="grid grid-cols-3 gap-2 pt-3 mt-2 border-t border-slate-100">
+                        <div>
+                            <span class="text-slate-500">목표 열량(kcal)</span>
+                            <input type="number" id="goal-cal" value="2544" oninput="onManualGoalChange()" class="w-full border border-slate-200 rounded p-1.5 font-semibold mt-0.5">
+                        </div>
+                        <div>
+                            <span class="text-slate-500">탄수화물(g)</span>
+                            <input type="number" id="goal-carb" value="318" oninput="onManualGoalChange()" class="w-full border border-slate-200 rounded p-1.5 font-semibold mt-0.5">
+                        </div>
+                        <div>
+                            <span class="text-slate-500">단백질(g)</span>
+                            <input type="number" id="goal-pro" value="159" oninput="onManualGoalChange()" class="w-full border border-slate-200 rounded p-1.5 font-semibold mt-0.5">
+                        </div>
+                        <div>
+                            <span class="text-slate-500">지방(g)</span>
+                            <input type="number" id="goal-fat" value="71" oninput="onManualGoalChange()" class="w-full border border-slate-200 rounded p-1.5 font-semibold mt-0.5">
+                        </div>
+                        <div>
+                            <span class="text-slate-500">당류 상한(g)</span>
+                            <input type="number" id="goal-sugar" value="64" oninput="onManualGoalChange()" class="w-full border border-slate-200 rounded p-1.5 font-semibold mt-0.5">
+                        </div>
+                        <div>
+                            <span class="text-slate-500">나트륨 상한(mg)</span>
+                            <input type="number" id="goal-na" value="2000" oninput="onManualGoalChange()" class="w-full border border-slate-200 rounded p-1.5 font-semibold mt-0.5">
+                        </div>
+                    </div>
+                </details>
+            </div>
+            
+            <!-- 2. Food Input Tabs -->
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <div class="flex border-b border-slate-200 mb-6">
+                    <button onclick="switchTab('ai')" id="tab-ai" class="flex-1 py-2.5 text-center font-semibold border-b-2 border-emerald-600 text-emerald-600">
+                        📸 사진 / 텍스트 AI 입력
+                    </button>
+                    <button onclick="switchTab('manual')" id="tab-manual" class="flex-1 py-2.5 text-center font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700">
+                        ✏️ 직접 수치 입력
+                    </button>
+                </div>
+
+                <!-- AI Input Mode -->
+                <div id="mode-ai" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">음식 사진 업로드</label>
+                        <div class="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center hover:border-emerald-500 transition cursor-pointer relative" onclick="document.getElementById('imageInput').click()">
+                            <input type="file" id="imageInput" accept="image/*" class="hidden" onchange="previewImage(event)">
+                            <div id="imagePreviewContainer" class="hidden mb-2">
+                                <img id="imagePreview" class="max-h-40 mx-auto rounded-lg object-cover">
+                            </div>
+                            <div id="uploadPlaceholder" class="py-4 text-slate-500">
+                                <i data-lucide="camera" class="w-8 h-8 mx-auto mb-2 text-slate-400"></i>
+                                <p class="text-sm">클릭하여 음식 사진을 업로드하세요</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">음식 설명 텍스트</label>
+                        <textarea id="textInput" rows="2" placeholder="예: 김치찌개 1인분이랑 공기밥 반 공기, 계란후라이 1개" 
+                            class="w-full border border-slate-300 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+                    </div>
+
+                    <button onclick="analyzeWithAI()" id="analyzeBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2 shadow-sm">
+                        <i data-lucide="sparkles" class="w-5 h-5"></i> 선택된 날짜에 AI 분석 추가
+                    </button>
+
+                    <!-- Quick Presets -->
+                    <div class="pt-4 border-t border-slate-100">
+                        <p class="text-xs font-semibold text-slate-400 uppercase mb-2">빠른 추가 프리셋 (API 키 불필요)</p>
+                        <div class="flex flex-wrap gap-1.5">
+                            <button onclick="addPreset('닭가슴살 샐러드', 320, 15, 38, 12, 4, 450)" class="text-xs bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 px-2.5 py-1.5 rounded-lg transition">+ 🥗 닭가슴살 샐러드</button>
+                            <button onclick="addPreset('김치찌개와 밥 1공기', 650, 78, 28, 22, 8, 1650)" class="text-xs bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 px-2.5 py-1.5 rounded-lg transition">+ 🍲 김치찌개 정식</button>
+                            <button onclick="addPreset('아메리카노 & 조각케이크', 410, 48, 5, 22, 32, 180)" class="text-xs bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 px-2.5 py-1.5 rounded-lg transition">+ 🍰 케이크 & 커피</button>
+                            <button onclick="addPreset('삶은 계란 2개', 155, 1.1, 13, 11, 1, 124)" class="text-xs bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 px-2.5 py-1.5 rounded-lg transition">+ 🥚 삶은 계란 2개</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Manual Input Mode -->
+                <div id="mode-manual" class="hidden space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">음식 이름</label>
+                        <input type="text" id="m-name" placeholder="예: 프로틴 바" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">칼로리 (kcal)</label>
+                            <input type="number" id="m-cal" value="0" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">탄수화물 (g)</label>
+                            <input type="number" id="m-carb" value="0" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">단백질 (g)</label>
+                            <input type="number" id="m-pro" value="0" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">지방 (g)</label>
+                            <input type="number" id="m-fat" value="0" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">당류 (g)</label>
+                            <input type="number" id="m-sugar" value="0" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">나트륨 (mg)</label>
+                            <input type="number" id="m-na" value="0" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                        </div>
+                    </div>
+                    <button onclick="addManualItem()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-semibold py-3 rounded-xl transition mt-2">
+                        선택된 날짜 식단에 추가
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Right Column: Real-time Dashboard & History (7 cols) -->
+        <div class="lg:col-span-7 space-y-6">
+            
+            <!-- 1. Daily Dashboard Card -->
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <div class="flex flex-wrap justify-between items-center gap-2 mb-6">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span id="selectedDateBadge" class="bg-slate-800 text-white text-xs font-bold px-2.5 py-1 rounded-md">오늘</span>
+                            <h2 class="text-lg font-bold text-slate-900">권장량 대비 섭취 현황</h2>
+                        </div>
+                        <p id="profileSummaryText" class="text-xs text-slate-500 mt-1">남성 · 30세 · 173cm · 70kg 기준 맞춤 목표치</p>
+                    </div>
+                    <span id="totalCalBadge" class="bg-emerald-100 text-emerald-800 text-sm font-bold px-3.5 py-1.5 rounded-full">
+                        0 / 2,544 kcal
+                    </span>
+                </div>
+
+                <!-- Gauges Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                    
+                    <!-- Progress Bars -->
+                    <div class="space-y-4" id="gaugesContainer"></div>
+
+                    <!-- Macro Ratio Chart -->
+                    <div class="flex flex-col items-center justify-center p-4 bg-slate-50 rounded-xl border border-slate-100">
+                        <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">섭취 탄·단·지 칼로리 비율</h3>
+                        <div class="w-44 h-44 relative">
+                            <canvas id="macroChart"></canvas>
+                        </div>
+                        <div id="macroLegend" class="text-xs text-slate-500 mt-3 text-center">
+                            음식을 추가하면 비율이 표시됩니다.
+                        </div>
+                        <div class="text-[11px] text-slate-400 mt-1">
+                            (권장 비율 가이드: 탄 50% · 단 25% · 지 25%)
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- 2. Logged Foods List for Selected Date -->
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="font-bold text-slate-800 flex items-center gap-2">
+                        <i data-lucide="utensils" class="w-4 h-4 text-emerald-600"></i>
+                        <span id="listDateTitle">오늘의 섭취 목록</span>
+                    </h2>
+                    <div class="flex gap-3">
+                        <button onclick="clearCurrentDateItems()" class="text-xs text-rose-500 hover:underline">이 날짜 식단 비우기</button>
+                        <button onclick="resetAllStorage()" class="text-xs text-slate-400 hover:text-slate-600 underline">전체 초기화</button>
+                    </div>
+                </div>
+                <div id="foodList" class="divide-y divide-slate-100 text-sm"></div>
+            </div>
+
+            <!-- 3. 7-Day Calorie History Chart -->
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h2 class="font-bold text-slate-800 flex items-center gap-2">
+                            <i data-lucide="calendar-days" class="w-4 h-4 text-emerald-600"></i> 최근 7일 칼로리 섭취 추이
+                        </h2>
+                        <p class="text-xs text-slate-500">선택된 날짜를 기준으로 최근 일주일간의 누적 기록입니다. (막대를 클릭하면 해당 날짜로 이동)</p>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs text-slate-500">
+                        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block"></span>목표 이내</span>
+                        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block"></span>목표 초과</span>
+                    </div>
+                </div>
+                <div class="h-48 w-full">
+                    <canvas id="weeklyChart"></canvas>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        lucide.createIcons();
+
+        const STORAGE_KEY = 'nutrition_calculator_data_v4';
+        let currentGender = 'male';
+        
+        // 날짜별 식단 저장 객체: { "2026-10-20": [ {id, name, cal, ...}, ... ] }
+        let dailyRecords = {};
+        let selectedDate = getLocalTodayStr();
+
+        let base64Image = null;
+        let imageMimeType = null;
+        let macroChartInstance = null;
+        let weeklyChartInstance = null;
+
+        // 로컬 시간 기준 YYYY-MM-DD 반환
+        function getLocalTodayStr() {
+            const now = new Date();
+            const offset = now.getTimezoneOffset() * 60000;
+            return new Date(now.getTime() - offset).toISOString().split('T')[0];
+        }
+
+        // 현재 선택된 날짜의 음식 배열 가져오기
+        function getCurrentFoodList() {
+            if (!dailyRecords[selectedDate]) {
+                dailyRecords[selectedDate] = [];
+            }
+            return dailyRecords[selectedDate];
+        }
+
+        // ==========================================
+        // 1. 날짜 이동 (달력 네비게이션)
+        // ==========================================
+        function shiftDate(days) {
+            const parts = selectedDate.split('-').map(Number);
+            const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+            dt.setDate(dt.getDate() + days);
+            const offset = dt.getTimezoneOffset() * 60000;
+            selectedDate = new Date(dt.getTime() - offset).toISOString().split('T')[0];
+            syncDateUI();
+        }
+
+        function onDatePick(val) {
+            if (!val) return;
+            selectedDate = val;
+            syncDateUI();
+        }
+
+        function goToday() {
+            selectedDate = getLocalTodayStr();
+            syncDateUI();
+        }
+
+        function syncDateUI() {
+            document.getElementById('datePicker').value = selectedDate;
+            const todayStr = getLocalTodayStr();
+            const isToday = (selectedDate === todayStr);
+
+            const badge = document.getElementById('selectedDateBadge');
+            const listTitle = document.getElementById('listDateTitle');
+
+            if (isToday) {
+                badge.textContent = '오늘';
+                badge.className = 'bg-emerald-600 text-white text-xs font-bold px-2.5 py-1 rounded-md';
+                listTitle.textContent = `오늘의 섭취 목록 (${selectedDate})`;
+            } else {
+                badge.textContent = selectedDate;
+                badge.className = 'bg-slate-800 text-white text-xs font-bold px-2.5 py-1 rounded-md';
+                listTitle.textContent = `${selectedDate} 섭취 목록`;
+            }
+
+            updateUI(false);
+        }
+
+        // ==========================================
+        // 2. LocalStorage 저장 및 불러오기 (v3 호환 포함)
+        // ==========================================
+        function saveDataToStorage() {
+            const dataToSave = {
+                apiKey: document.getElementById('apiKey').value,
+                profile: {
+                    gender: currentGender,
+                    age: document.getElementById('p-age').value,
+                    height: document.getElementById('p-height').value,
+                    weight: document.getElementById('p-weight').value,
+                    activity: document.getElementById('p-activity').value,
+                    purpose: document.getElementById('p-purpose').value,
+                    summaryText: document.getElementById('profileSummaryText').textContent
+                },
+                goals: {
+                    cal: document.getElementById('goal-cal').value,
+                    carb: document.getElementById('goal-carb').value,
+                    pro: document.getElementById('goal-pro').value,
+                    fat: document.getElementById('goal-fat').value,
+                    sugar: document.getElementById('goal-sugar').value,
+                    na: document.getElementById('goal-na').value
+                },
+                dailyRecords: dailyRecords
+            };
+
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+            showSaveIndicator();
+        }
+
+        function loadDataFromStorage() {
+            document.getElementById('datePicker').value = selectedDate;
+            let savedRaw = localStorage.getItem(STORAGE_KEY);
+
+            // 이전 버전(v3) 데이터가 있으면 자동 마이그레이션
+            if (!savedRaw) {
+                const v3Raw = localStorage.getItem('nutrition_calculator_data_v3');
+                if (v3Raw) {
+                    try {
+                        const v3Data = JSON.parse(v3Raw);
+                        v3Data.dailyRecords = {};
+                        if (Array.isArray(v3Data.foodItems) && v3Data.foodItems.length > 0) {
+                            v3Data.dailyRecords[selectedDate] = v3Data.foodItems;
+                        }
+                        savedRaw = JSON.stringify(v3Data);
+                    } catch (e) {}
+                }
+            }
+
+            if (!savedRaw) {
+                calculateCustomGoals();
+                syncDateUI();
+                return;
+            }
+
+            try {
+                const parsed = JSON.parse(savedRaw);
+
+                if (parsed.apiKey) document.getElementById('apiKey').value = parsed.apiKey;
+
+                if (parsed.profile) {
+                    currentGender = parsed.profile.gender || 'male';
+                    updateGenderButtons();
+                    document.getElementById('p-age').value = parsed.profile.age || 30;
+                    document.getElementById('p-height').value = parsed.profile.height || 173;
+                    document.getElementById('p-weight').value = parsed.profile.weight || 70;
+                    document.getElementById('p-activity').value = parsed.profile.activity || '1.55';
+                    document.getElementById('p-purpose').value = parsed.profile.purpose || '0';
+                    if (parsed.profile.summaryText) {
+                        document.getElementById('profileSummaryText').textContent = parsed.profile.summaryText;
+                    }
+                }
+
+                updateBmrSummaryOnly();
+
+                if (parsed.goals) {
+                    document.getElementById('goal-cal').value = parsed.goals.cal || 2000;
+                    document.getElementById('goal-carb').value = parsed.goals.carb || 324;
+                    document.getElementById('goal-pro').value = parsed.goals.pro || 55;
+                    document.getElementById('goal-fat').value = parsed.goals.fat || 54;
+                    document.getElementById('goal-sugar').value = parsed.goals.sugar || 100;
+                    document.getElementById('goal-na').value = parsed.goals.na || 2000;
+                }
+
+                if (parsed.dailyRecords && typeof parsed.dailyRecords === 'object') {
+                    dailyRecords = parsed.dailyRecords;
+                }
+
+                syncDateUI();
+            } catch (e) {
+                console.error('저장된 데이터 불러오기 실패:', e);
+                calculateCustomGoals();
+            }
+        }
+
+        function resetAllStorage() {
+            if (!confirm('모든 날짜의 식단 기록과 신체 설정을 완전히 초기화할까요?')) return;
+            localStorage.removeItem(STORAGE_KEY);
+            location.reload();
+        }
+
+        function showSaveIndicator() {
+            const el = document.getElementById('saveStatus');
+            el.classList.add('text-emerald-600', 'bg-emerald-50');
+            setTimeout(() => {
+                el.classList.remove('text-emerald-600', 'bg-emerald-50');
+            }, 600);
+        }
+
+        // ==========================================
+        // 3. 신체 프로필 및 목표 계산 로직
+        // ==========================================
+        function updateGenderButtons() {
+            const isMale = currentGender === 'male';
+            document.getElementById('btn-male').className = isMale
+                ? 'py-1.5 rounded-md bg-white text-emerald-700 shadow-sm transition'
+                : 'py-1.5 rounded-md text-slate-600 hover:text-slate-900 transition';
+            document.getElementById('btn-female').className = !isMale
+                ? 'py-1.5 rounded-md bg-white text-emerald-700 shadow-sm transition'
+                : 'py-1.5 rounded-md text-slate-600 hover:text-slate-900 transition';
+        }
+
+        function setGender(gender) {
+            currentGender = gender;
+            updateGenderButtons();
+            calculateCustomGoals();
+        }
+
+        function updateBmrSummaryOnly() {
+            const age = parseFloat(document.getElementById('p-age').value) || 30;
+            const height = parseFloat(document.getElementById('p-height').value) || 170;
+            const weight = parseFloat(document.getElementById('p-weight').value) || 65;
+            const activity = parseFloat(document.getElementById('p-activity').value) || 1.55;
+            const purposeOffset = parseFloat(document.getElementById('p-purpose').value) || 0;
+
+            let bmr = (10 * weight) + (6.25 * height) - (5 * age);
+            bmr += (currentGender === 'male') ? 5 : -161;
+            bmr = Math.round(bmr);
+
+            const tdee = Math.round(bmr * activity);
+            const targetCal = Math.max(1000, tdee + purposeOffset);
+
+            document.getElementById('bmrDisplay').textContent = `${bmr.toLocaleString()} kcal`;
+            document.getElementById('tdeeDisplay').textContent = `${tdee.toLocaleString()} kcal`;
+            document.getElementById('targetCalDisplay').textContent = `${targetCal.toLocaleString()} kcal`;
+            return { bmr, tdee, targetCal, age, height, weight };
+        }
+
+        function calculateCustomGoals() {
+            const { targetCal, age, height, weight } = updateBmrSummaryOnly();
+
+            const targetCarb = Math.round((targetCal * 0.50) / 4);
+            const targetPro = Math.round((targetCal * 0.25) / 4);
+            const targetFat = Math.round((targetCal * 0.25) / 9);
+            const targetSugar = Math.round((targetCal * 0.10) / 4);
+
+            document.getElementById('goal-cal').value = targetCal;
+            document.getElementById('goal-carb').value = targetCarb;
+            document.getElementById('goal-pro').value = targetPro;
+            document.getElementById('goal-fat').value = targetFat;
+            document.getElementById('goal-sugar').value = targetSugar;
+            document.getElementById('goal-na').value = 2000;
+
+            const genderKor = currentGender === 'male' ? '남성' : '여성';
+            document.getElementById('profileSummaryText').textContent = 
+                `${genderKor} · ${age}세 · ${height}cm · ${weight}kg 맞춤 권장량 적용 중`;
+
+            updateUI(true);
+        }
+
+        function onManualGoalChange() {
+            document.getElementById('profileSummaryText').textContent = '사용자 직접 수정 목표치 적용 중';
+            updateUI(true);
+        }
+
+        function setStandardGoals() {
+            document.getElementById('goal-cal').value = 2000;
+            document.getElementById('goal-carb').value = 324;
+            document.getElementById('goal-pro').value = 55;
+            document.getElementById('goal-fat').value = 54;
+            document.getElementById('goal-sugar').value = 100;
+            document.getElementById('goal-na').value = 2000;
+            document.getElementById('profileSummaryText').textContent = '식약처 표준 1일 영양성분 기준치 (2,000kcal) 적용 중';
+            updateUI(true);
+        }
+
+        // ==========================================
+        // 4. 음식 추가 및 AI 분석 로직 (선택된 날짜에 저장)
+        // ==========================================
+        function switchTab(mode) {
+            const isAI = mode === 'ai';
+            document.getElementById('mode-ai').classList.toggle('hidden', !isAI);
+            document.getElementById('mode-manual').classList.toggle('hidden', isAI);
+            
+            document.getElementById('tab-ai').className = isAI 
+                ? 'flex-1 py-2.5 text-center font-semibold border-b-2 border-emerald-600 text-emerald-600'
+                : 'flex-1 py-2.5 text-center font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700';
+            document.getElementById('tab-manual').className = !isAI 
+                ? 'flex-1 py-2.5 text-center font-semibold border-b-2 border-emerald-600 text-emerald-600'
+                : 'flex-1 py-2.5 text-center font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700';
+        }
+
+        function previewImage(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            imageMimeType = file.type;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('imagePreview').src = e.target.result;
+                document.getElementById('imagePreviewContainer').classList.remove('hidden');
+                document.getElementById('uploadPlaceholder').classList.add('hidden');
+                base64Image = e.target.result.split(',')[1];
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function addPreset(name, cal, carb, pro, fat, sugar, na) {
+            getCurrentFoodList().push({ id: Date.now(), name, cal, carb, pro, fat, sugar, na });
+            updateUI(true);
+        }
+
+        function addManualItem() {
+            const name = document.getElementById('m-name').value.trim() || '직접 입력한 음식';
+            const cal = parseFloat(document.getElementById('m-cal').value) || 0;
+            const carb = parseFloat(document.getElementById('m-carb').value) || 0;
+            const pro = parseFloat(document.getElementById('m-pro').value) || 0;
+            const fat = parseFloat(document.getElementById('m-fat').value) || 0;
+            const sugar = parseFloat(document.getElementById('m-sugar').value) || 0;
+            const na = parseFloat(document.getElementById('m-na').value) || 0;
+
+            getCurrentFoodList().push({ id: Date.now(), name, cal, carb, pro, fat, sugar, na });
+            document.getElementById('m-name').value = '';
+            updateUI(true);
+        }
+
+        function removeItem(id) {
+            dailyRecords[selectedDate] = getCurrentFoodList().filter(item => item.id !== id);
+            updateUI(true);
+        }
+
+        function clearCurrentDateItems() {
+            dailyRecords[selectedDate] = [];
+            updateUI(true);
+        }
+
+        async function analyzeWithAI() {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const textInput = document.getElementById('textInput').value.trim();
+
+            if (!base64Image && !textInput) {
+                alert('음식 사진을 업로드하거나 텍스트 설명을 입력해주세요!');
+                return;
+            }
+
+            if (!apiKey) {
+                alert('우측 상단에 Gemini API 키를 입력해주세요.\nAPI 키가 없다면 하단의 [빠른 추가 프리셋]이나 [직접 수치 입력] 탭을 이용할 수 있습니다.');
+                return;
+            }
+
+            const btn = document.getElementById('analyzeBtn');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> AI가 영양 성분을 분석 중입니다...`;
+            lucide.createIcons();
+
+            try {
+                const prompt = `다음 음식(사진 또는 텍스트)의 영양 성분을 분석해서 반드시 아래 JSON 형식으로만 응답해줘. 마크다운 코드블록 없이 순수 JSON만 반환해.
+                {
+                    "name": "음식 이름 요약 (한국어)",
+                    "cal": 열량(kcal, 숫자),
+                    "carb": 탄수화물(g, 숫자),
+                    "pro": 단백질(g, 숫자),
+                    "fat": 지방(g, 숫자),
+                    "sugar": 당류(g, 숫자),
+                    "na": 나트륨(mg, 숫자)
+                }
+                추가 설명 텍스트: ${textInput || '없음'}`;
+
+                const parts = [{ text: prompt }];
+                if (base64Image) {
+                    parts.push({
+                        inline_data: { mime_type: imageMimeType, data: base64Image }
+                    });
+                }
+
+                // 최신 Gemini 3.8 Flash를 기본으로 사용하며, 키/환경에 따라 2.5 Flash로 자동 폴백
+                const models = ['gemini-3.8-flash', 'gemini-2.5-flash'];
+                let data = null;
+                let lastError = null;
+
+                for (const model of models) {
+                    try {
+                        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ parts }],
+                                generationConfig: { responseMimeType: "application/json" }
+                            })
+                        });
+
+                        const resJson = await response.json();
+                        if (resJson.error) {
+                            // 모델이 지원되지 않는 키/환경일 경우(404 등) 다음 모델로 시도
+                            if (resJson.error.code === 404 || (resJson.error.message && resJson.error.message.includes('not found'))) {
+                                lastError = new Error(resJson.error.message);
+                                continue;
+                            }
+                            throw new Error(resJson.error.message);
+                        }
+
+                        data = resJson;
+                        break;
+                    } catch (e) {
+                        lastError = e;
+                        if (!e.message || (!e.message.includes('not found') && !e.message.includes('NOT_FOUND'))) {
+                            throw e;
+                        }
+                    }
+                }
+
+                if (!data) throw lastError || new Error('AI 분석 응답을 받아오지 못했습니다.');
+
+                const resultText = data.candidates[0].content.parts[0].text;
+                const parsed = JSON.parse(resultText);
+
+                getCurrentFoodList().push({
+                    id: Date.now(),
+                    name: parsed.name || 'AI 분석 음식',
+                    cal: Number(parsed.cal) || 0,
+                    carb: Number(parsed.carb) || 0,
+                    pro: Number(parsed.pro) || 0,
+                    fat: Number(parsed.fat) || 0,
+                    sugar: Number(parsed.sugar) || 0,
+                    na: Number(parsed.na) || 0
+                });
+
+                document.getElementById('textInput').value = '';
+                document.getElementById('imageInput').value = '';
+                document.getElementById('imagePreviewContainer').classList.add('hidden');
+                document.getElementById('uploadPlaceholder').classList.remove('hidden');
+                base64Image = null;
+
+                updateUI(true);
+
+            } catch (error) {
+                alert('AI 분석 중 오류가 발생했습니다: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+                lucide.createIcons();
+            }
+        }
+
+        // ==========================================
+        // 5. 대시보드 및 주간 히스토리 차트 업데이트
+        // ==========================================
+        function updateUI(shouldSave = true) {
+            const goals = {
+                cal: parseFloat(document.getElementById('goal-cal').value) || 2000,
+                carb: parseFloat(document.getElementById('goal-carb').value) || 324,
+                pro: parseFloat(document.getElementById('goal-pro').value) || 55,
+                fat: parseFloat(document.getElementById('goal-fat').value) || 54,
+                sugar: parseFloat(document.getElementById('goal-sugar').value) || 100,
+                na: parseFloat(document.getElementById('goal-na').value) || 2000
+            };
+
+            const currentList = getCurrentFoodList();
+
+            const totals = currentList.reduce((acc, item) => {
+                acc.cal += item.cal;
+                acc.carb += item.carb;
+                acc.pro += item.pro;
+                acc.fat += item.fat;
+                acc.sugar += item.sugar;
+                acc.na += item.na;
+                return acc;
+            }, { cal: 0, carb: 0, pro: 0, fat: 0, sugar: 0, na: 0 });
+
+            document.getElementById('totalCalBadge').textContent = `${Math.round(totals.cal).toLocaleString()} / ${goals.cal.toLocaleString()} kcal`;
+
+            const metrics = [
+                { key: 'cal', label: '열량 (칼로리)', unit: 'kcal', val: totals.cal, goal: goals.cal },
+                { key: 'carb', label: '탄수화물', unit: 'g', val: totals.carb, goal: goals.carb },
+                { key: 'pro', label: '단백질', unit: 'g', val: totals.pro, goal: goals.pro },
+                { key: 'fat', label: '지방', unit: 'g', val: totals.fat, goal: goals.fat },
+                { key: 'sugar', label: '당류', unit: 'g', val: totals.sugar, goal: goals.sugar },
+                { key: 'na', label: '나트륨', unit: 'mg', val: totals.na, goal: goals.na }
+            ];
+
+            const gaugesHTML = metrics.map(m => {
+                const percent = Math.round((m.val / m.goal) * 100);
+                const barWidth = Math.min(percent, 100);
+                
+                let colorClass = 'bg-emerald-500';
+                let textClass = 'text-emerald-600';
+                if (percent > 100) {
+                    colorClass = 'bg-rose-500';
+                    textClass = 'text-rose-600 font-bold';
+                } else if (percent >= 80) {
+                    colorClass = 'bg-amber-500';
+                    textClass = 'text-amber-600';
+                }
+
+                return `
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="font-semibold text-slate-700">${m.label}</span>
+                            <span>
+                                <strong class="text-slate-900">${Math.round(m.val * 10) / 10}${m.unit}</strong> 
+                                <span class="text-slate-400">/ ${m.goal}${m.unit}</span>
+                                <span class="ml-1 ${textClass}">(${percent}%)</span>
+                            </span>
+                        </div>
+                        <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                            <div class="${colorClass} h-2.5 rounded-full progress-bar" style="width: ${barWidth}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('gaugesContainer').innerHTML = gaugesHTML;
+
+            const listContainer = document.getElementById('foodList');
+            if (currentList.length === 0) {
+                listContainer.innerHTML = `<p class="text-slate-400 text-center py-6">${selectedDate}에 기록된 음식이 없습니다. 왼쪽에서 음식을 추가해보세요!</p>`;
+            } else {
+                listContainer.innerHTML = currentList.map(item => `
+                    <div class="py-3 flex justify-between items-center">
+                        <div>
+                            <p class="font-semibold text-slate-800">${item.name}</p>
+                            <p class="text-xs text-slate-500">
+                                탄 ${item.carb}g · 단 ${item.pro}g · 지 ${item.fat}g · 당 ${item.sugar}g · 나트륨 ${item.na}mg
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="font-bold text-emerald-700">${item.cal} kcal</span>
+                            <button onclick="removeItem(${item.id})" class="text-slate-400 hover:text-rose-500 p-1">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+                lucide.createIcons();
+            }
+
+            updateMacroChart(totals.carb * 4, totals.pro * 4, totals.fat * 9);
+            updateWeeklyChart(goals.cal);
+
+            if (shouldSave) {
+                saveDataToStorage();
+            }
+        }
+
+        function updateMacroChart(carbCal, proCal, fatCal) {
+            const totalMacroCal = carbCal + proCal + fatCal;
+            const ctx = document.getElementById('macroChart').getContext('2d');
+
+            const dataValues = totalMacroCal > 0 ? [carbCal, proCal, fatCal] : [1, 1, 1];
+            const bgColors = totalMacroCal > 0 
+                ? ['#3b82f6', '#10b981', '#f59e0b'] 
+                : ['#e2e8f0', '#e2e8f0', '#e2e8f0'];
+
+            if (macroChartInstance) {
+                macroChartInstance.data.datasets[0].data = dataValues;
+                macroChartInstance.data.datasets[0].backgroundColor = bgColors;
+                macroChartInstance.update();
+            } else {
+                macroChartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['탄수화물', '단백질', '지방'],
+                        datasets: [{
+                            data: dataValues,
+                            backgroundColor: bgColors,
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        cutout: '70%',
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { enabled: totalMacroCal > 0 }
+                        }
+                    }
+                });
+            }
+
+            const legendEl = document.getElementById('macroLegend');
+            if (totalMacroCal > 0) {
+                const cRatio = Math.round((carbCal / totalMacroCal) * 100);
+                const pRatio = Math.round((proCal / totalMacroCal) * 100);
+                const fRatio = 100 - cRatio - pRatio;
+                legendEl.innerHTML = `
+                    <span class="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1"></span>탄 ${cRatio}% 
+                    <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 ml-2 mr-1"></span>단 ${pRatio}% 
+                    <span class="inline-block w-2 h-2 rounded-full bg-amber-500 ml-2 mr-1"></span>지 ${fRatio}%
+                `;
+            } else {
+                legendEl.textContent = '음식을 추가하면 비율이 표시됩니다.';
+            }
+        }
+
+        // 최근 7일간의 칼로리 추이 막대 차트
+        function updateWeeklyChart(goalCal) {
+            const labels = [];
+            const fullDates = [];
+            const calData = [];
+            const barColors = [];
+
+            const parts = selectedDate.split('-').map(Number);
+            const baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
+
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date(baseDate);
+                d.setDate(d.getDate() - i);
+                const offset = d.getTimezoneOffset() * 60000;
+                const dStr = new Date(d.getTime() - offset).toISOString().split('T')[0];
+                
+                fullDates.push(dStr);
+                labels.push(dStr.slice(5)); // MM-DD 표시
+
+                const dayItems = dailyRecords[dStr] || [];
+                const dayCal = dayItems.reduce((sum, item) => sum + item.cal, 0);
+                calData.push(Math.round(dayCal));
+
+                if (dayCal > goalCal) {
+                    barColors.push('#f43f5e'); // 목표 초과 (Rose)
+                } else if (dStr === selectedDate) {
+                    barColors.push('#059669'); // 현재 선택된 날짜 강조 (Dark Emerald)
+                } else {
+                    barColors.push('#34d399'); // 일반 목표 이내 (Light Emerald)
+                }
+            }
+
+            const ctx = document.getElementById('weeklyChart').getContext('2d');
+
+            if (weeklyChartInstance) {
+                weeklyChartInstance.data.labels = labels;
+                weeklyChartInstance.data.datasets[0].data = calData;
+                weeklyChartInstance.data.datasets[0].backgroundColor = barColors;
+                weeklyChartInstance.options.onClick = (e, elements) => {
+                    if (elements.length > 0) {
+                        const idx = elements[0].index;
+                        onDatePick(fullDates[idx]);
+                    }
+                };
+                weeklyChartInstance.update();
+            } else {
+                weeklyChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '섭취 칼로리 (kcal)',
+                            data: calData,
+                            backgroundColor: barColors,
+                            borderRadius: 6,
+                            maxBarThickness: 36
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        onClick: (e, elements) => {
+                            if (elements.length > 0) {
+                                const idx = elements[0].index;
+                                onDatePick(fullDates[idx]);
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                suggestedMax: goalCal * 1.2,
+                                grid: { color: '#f1f5f9' }
+                            },
+                            x: {
+                                grid: { display: false }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+            }
+        }
+
+        // 페이지 로드 시 실행
+        loadDataFromStorage();
+    </script>
+</body>
 </html>
