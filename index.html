@@ -820,10 +820,22 @@
             const activeBtn = useSearch ? btnSearch : btnNormal;
             const originalHTML = activeBtn.innerHTML;
 
+            // 단계별 로딩 UI 제어 함수
+            let stepTimer = null;
+            function updateLoadingStep(text, iconName = 'loader-2', animate = true) {
+                const spinClass = animate ? 'animate-spin' : '';
+                activeBtn.innerHTML = `<i data-lucide="${iconName}" class="w-4 h-4 ${spinClass}"></i> <span>${text}</span>`;
+                lucide.createIcons();
+            }
+
             btnNormal.disabled = true;
             btnSearch.disabled = true;
-            activeBtn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> ${useSearch ? '제품 검색 중...' : 'AI 분석 중...'}`;
-            lucide.createIcons();
+            updateLoadingStep(useSearch ? '제품 정보 실시간 검색 중...' : '식단 데이터 전송 중...');
+
+            // 3초 경과 시 사용자가 답답하지 않도록 정밀 계산 단계로 안내 전환
+            stepTimer = setTimeout(() => {
+                updateLoadingStep(useSearch ? '공식 영양성분 교차 검증 중...' : '영양소 정밀 계산 중...');
+            }, 2500);
 
             try {
                 const photoCountText = selectedImages.length > 0 ? ` (제공된 사진 총 ${selectedImages.length}장)` : '';
@@ -832,8 +844,9 @@
                     ? `\n[Google 검색 활용 지침]\n- 시판 제품, 공산품, 프랜차이즈 및 카페 메뉴(예: 솔티라이엇 밤시나몬라떼, 펩시제로 등)의 공식 영양성분표나 레시피 정보를 실시간 검색하여 반영하세요.\n- 만약 해당 브랜드의 공식 영양성분표가 검색되지 않는 경우, 스타벅스·이디야·메가커피 등 대형 프랜차이즈의 동일/유사 메뉴(예: 밤라떼, 마롱라떼) 공시 수치를 검색하여 합리적인 벤치마크 기준값으로 삼으세요.` 
                     : `\n[데이터 추정 지침]\n- 공식 표가 없는 시판/외식 메뉴는 국내 대형 프랜차이즈 표준 영양성분표 및 식약처 식품영양성분 DB의 유사 메뉴 수치를 벤치마크하여 가장 현실적이고 신뢰도 높은 수치를 도출하세요.`;
 
-                const prompt = `당신은 임상 영양학 및 식품 데이터 분석 전문가입니다.
-제공된 음식 사진${photoCountText}과 텍스트 설명을 종합적으로 분석하여, 식사에 포함된 모든 음식의 전체 영양 성분 총합을 계산하세요.
+                // 시스템 지침(systemInstruction)으로 가이드라인을 분리하여 구글 서버 캐싱 가속 및 지침 준수율 극대화
+                const systemPrompt = `당신은 임상 영양학 및 식품 데이터 분석 전문가입니다.
+사용자가 제공한 음식 사진${photoCountText}과 텍스트 설명을 종합적으로 분석하여, 식사에 포함된 모든 음식의 전체 영양 성분 총합을 계산하세요.
 
 [필수 분석 및 추론 가이드라인]
 1. 상호명/수식어 편향 절대 금지 (Anti-Brand Bias):
@@ -857,11 +870,13 @@ ${searchInstruction}
     "fat": 총 지방(g, 숫자),
     "sugar": 총 당류(g, 숫자),
     "na": 총 나트륨(mg, 숫자)
-}
+}`;
 
-추가 설명 텍스트: ${textInput || '없음'}`;
+                const userTextContent = textInput 
+                    ? `[분석 요청 음식 설명]: ${textInput}` 
+                    : '첨부된 사진에 나온 음식들의 영양 성분을 분석해주세요.';
 
-                const parts = [{ text: prompt }];
+                const parts = [{ text: userTextContent }];
                 selectedImages.forEach(img => {
                     parts.push({
                         inline_data: { mime_type: img.mimeType, data: img.data }
@@ -869,6 +884,9 @@ ${searchInstruction}
                 });
 
                 const requestBody = {
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
                     contents: [{ parts }]
                 };
 
@@ -917,6 +935,7 @@ ${searchInstruction}
             } catch (error) {
                 alert(`AI 분석에 실패했습니다: ${error.message}\n\n입력하신 사진과 텍스트는 그대로 유지되어 있으니 버튼을 다시 눌러 재시도해 주세요.`);
             } finally {
+                if (stepTimer) clearTimeout(stepTimer);
                 btnNormal.disabled = false;
                 btnSearch.disabled = false;
                 activeBtn.innerHTML = originalHTML;
