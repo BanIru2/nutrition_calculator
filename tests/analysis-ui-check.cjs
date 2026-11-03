@@ -9,7 +9,7 @@ const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)]
   .replace(/\s*loadDataFromStorage\(\);\s*$/, '');
 const nutrition = { name: '테스트 식사', cal: 400, carb: 50, pro: 20, fat: 13, sugar: 5, na: 600 };
 
-function setup({ writeFailure = false } = {}) {
+function setup({ writeFailure = false, responseName = nutrition.name } = {}) {
   const nodes = new Map(), storage = new Map(), alerts = [], pending = [];
   const context = vm.createContext({
     document: {
@@ -40,7 +40,7 @@ function setup({ writeFailure = false } = {}) {
     fetch: async () => new Promise(resolve => pending.push((status = 200) => resolve({
       ok: status === 200, status, headers: { get() { return null; } },
       json: async () => status === 200
-        ? { candidates: [{ content: { parts: [{ text: JSON.stringify(nutrition) }] } }] }
+        ? { candidates: [{ content: { parts: [{ text: JSON.stringify({ ...nutrition, name: responseName }) }] } }] }
         : { error: { message: 'Request failed' } }
     })))
   });
@@ -130,6 +130,48 @@ async function main() {
   restart.complete();
   await newRun;
   assert.equal(restart.node('analysisInputs').disabled, false);
+  checks++;
+
+  const unsafeName = `"><img src=x onerror="alert(1)"> & '샐러드'`;
+  const escapedName = '&quot;&gt;&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &#39;샐러드&#39;';
+  const names = setup({ responseName: unsafeName });
+  const namesRun = names.context.analyzeWithAI();
+  names.complete();
+  await namesRun;
+  assert.ok(names.node('foodList').innerHTML.includes(escapedName));
+  assert.ok(!names.node('foodList').innerHTML.includes('<img'));
+  assert.equal(names.evaluate('getCurrentFoodList()[0].name'), unsafeName);
+  const stored = JSON.parse([...names.storage.values()][0]);
+  assert.equal(stored.dailyRecords['2026-11-04'][0].name, unsafeName);
+  checks++;
+
+  const itemId = names.evaluate('getCurrentFoodList()[0].id');
+  names.context.startEditItem(itemId);
+  assert.ok(names.node('foodList').innerHTML.includes(`value="${escapedName}"`));
+  assert.ok(!names.node('foodList').innerHTML.includes('<img'));
+  checks++;
+
+  names.context.saveItemAsPreset(itemId);
+  assert.ok(names.node('presetsList').innerHTML.includes(escapedName));
+  assert.ok(!names.node('presetsList').innerHTML.includes('<img'));
+  names.context.togglePresetManageMode();
+  assert.ok(names.node('presetsList').innerHTML.includes(escapedName));
+  assert.ok(!names.node('presetsList').innerHTML.includes('<img'));
+  checks++;
+
+  const manual = setup();
+  manual.node('m-name').value = unsafeName;
+  manual.node('m-cal').value = '100';
+  manual.context.addManualItem(true);
+  assert.ok(manual.node('foodList').innerHTML.includes(escapedName));
+  assert.ok(manual.node('presetsList').innerHTML.includes(escapedName));
+  checks++;
+
+  const literal = setup();
+  literal.node('m-name').value = '&lt;b&gt;샐러드&lt;/b&gt;';
+  literal.context.addManualItem();
+  assert.ok(literal.node('foodList').innerHTML.includes('&amp;lt;b&amp;gt;샐러드&amp;lt;/b&amp;gt;'));
+  assert.equal(literal.evaluate('getCurrentFoodList()[0].name'), '&lt;b&gt;샐러드&lt;/b&gt;');
   checks++;
 
   const full = setup({ writeFailure: true });
