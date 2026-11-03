@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>날짜별 누적 AI 영양 성분 계산기</title>
     <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="vendor/tailwind-3.4.17.js" integrity="sha384-igm5BeiBt36UU4gqwWS7imYmelpTsZlQ45FZf+XBn9MuJbn4nQr7yx1yFydocC/K"></script>
     <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1" integrity="sha384-Emf5ZVIUiarAdhkgtqK+5/Z5qIvM6QoVrS+qAVtfyZVuD5lIHrac0me485+Antp0" crossorigin="anonymous"></script>
     <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide@1.67.0/dist/umd/lucide.min.js" integrity="sha384-xrRF3kGz5GMZeUudxpTxrrjy0NRy/+U3dHY72SdMEgy9OsrO9x8mCw6DCD8m+jjS" crossorigin="anonymous"></script>
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; }
@@ -54,12 +54,16 @@
 
             <div class="flex items-center gap-2 text-sm">
                 <label for="apiKey" class="font-medium text-slate-600 hidden sm:inline">Gemini API 키:</label>
-                <input type="password" id="apiKey" oninput="saveDataToStorage()" placeholder="AI 분석용 API 키 입력" 
+                <input type="password" id="apiKey" oninput="saveDataToStorage()" placeholder="AI 분석용 API 키 입력" autocomplete="off" spellcheck="false" autocapitalize="none" title="이 브라우저에 자동 저장됩니다. 공용 기기에서는 사용 후 키를 지워주세요."
                     class="border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 w-40 sm:w-48 text-xs">
                 <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-emerald-600 hover:underline text-xs flex items-center gap-1">
                     발급 <i data-lucide="external-link" class="w-3 h-3"></i>
                 </a>
             </div>
+        </div>
+        <div id="saveWarning" role="alert" class="hidden max-w-6xl mx-auto px-4 pb-3 text-sm text-rose-700">
+            저장하지 못한 변경 내용이 있습니다. 새로고침하거나 닫으면 사라질 수 있습니다.
+            <button type="button" onclick="retrySaveData()" class="ml-2 font-semibold underline">다시 저장</button>
         </div>
     </header>
 
@@ -211,7 +215,7 @@
                                     </button>
                                     <button type="button" onclick="clearAllSelectedImages()" 
                                         class="text-xs text-slate-400 hover:text-rose-600 underline px-2 py-1.5 transition">
-                                        전체 취소
+                                        사진 모두 삭제
                                     </button>
                                 </div>
                             </div>
@@ -242,6 +246,10 @@
                     </div>
 
                     </fieldset>
+
+                    <div class="flex justify-end">
+                        <button type="button" id="clearInputBtn" onclick="clearAnalysisInputs()" class="text-xs text-slate-500 underline disabled:opacity-50">입력 비우기</button>
+                    </div>
 
                     <!-- 분석 모드 선택 토글 (빠른 모드 vs 정밀 모드) -->
                     <div class="flex items-center justify-between bg-slate-100 p-1 rounded-xl text-xs">
@@ -275,8 +283,8 @@
                                 <i data-lucide="loader-2" class="w-4 h-4 animate-spin text-emerald-400"></i>
                                 <span id="activeStatusText">AI 분석 준비 중...</span>
                             </button>
-                            <button type="button" onclick="cancelCurrentAnalysis()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-semibold py-3 px-4 rounded-xl transition flex items-center justify-center gap-1 text-xs sm:text-sm shadow-sm" title="분석 요청 즉시 취소">
-                                <i data-lucide="x" class="w-4 h-4"></i> <span>취소</span>
+                            <button type="button" onclick="cancelCurrentAnalysis()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-semibold py-3 px-4 rounded-xl transition flex items-center justify-center gap-1 text-xs sm:text-sm shadow-sm" title="분석만 중단하고 입력한 설명과 사진은 유지합니다">
+                                <i data-lucide="x" class="w-4 h-4"></i> <span>분석 중단</span>
                             </button>
                         </div>
                     </div>
@@ -444,6 +452,10 @@
         let isPresetManageMode = false;
 
         let selectedImages = [];
+        let imageSelectionVersion = 0;
+        let pendingImageSelections = 0;
+        let hasUnsavedChanges = false;
+        let pendingAnalysisSave = false;
         let editingItemId = null;
         let macroChartInstance = null;
         let weeklyChartInstance = null;
@@ -472,12 +484,22 @@
             }
         });
 
+        window.addEventListener('beforeunload', event => {
+            if (hasUnsavedChanges) {
+                event.preventDefault();
+                event.returnValue = '';
+            }
+        });
+
         function setAnalyzingUI(analyzing, statusText = '') {
             isAnalyzing = analyzing;
             const normalGroup = document.getElementById('normalBtnGroup');
             const loadingGroup = document.getElementById('loadingBtnGroup');
             const statusSpan = document.getElementById('activeStatusText');
-            document.getElementById('analysisInputs').disabled = analyzing;
+            document.getElementById('analysisInputs').disabled = analyzing || pendingAnalysisSave;
+            document.getElementById('clearInputBtn').disabled = analyzing;
+            document.getElementById('analyzeBtnNormal').disabled = analyzing || pendingAnalysisSave || pendingImageSelections > 0;
+            document.getElementById('analyzeBtnSearch').disabled = analyzing || pendingAnalysisSave || pendingImageSelections > 0;
 
             if (analyzing) {
                 if (normalGroup) normalGroup.classList.add('hidden');
@@ -590,16 +612,44 @@
                 customPresets: customPresets
             };
 
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
-            showSaveIndicator();
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+                hasUnsavedChanges = false;
+                if (pendingAnalysisSave) clearAnalysisInputs();
+                showSaveIndicator();
+                return true;
+            } catch (error) {
+                hasUnsavedChanges = true;
+                showSaveIndicator();
+                setAnalyzingUI(isAnalyzing);
+                console.warn('브라우저 저장 실패:', error.name);
+                return false;
+            }
+        }
+
+        function retrySaveData() {
+            if (saveDataToStorage()) updateUI(false);
         }
 
         function loadDataFromStorage() {
             document.getElementById('datePicker').value = selectedDate;
-            let savedRaw = localStorage.getItem(STORAGE_KEY);
+            let savedRaw = null;
+            let v3Raw = null;
+            try {
+                savedRaw = localStorage.getItem(STORAGE_KEY);
+                if (!savedRaw) v3Raw = localStorage.getItem('nutrition_calculator_data_v3');
+            } catch (error) {
+                hasUnsavedChanges = true;
+                showSaveIndicator();
+                console.warn('브라우저 저장소 읽기 실패:', error.name);
+                customPresets = [...DEFAULT_PRESETS];
+                renderPresets();
+                updateBmrSummaryOnly();
+                syncDateUI();
+                return;
+            }
 
             if (!savedRaw) {
-                const v3Raw = localStorage.getItem('nutrition_calculator_data_v3');
                 if (v3Raw) {
                     try {
                         const v3Data = JSON.parse(v3Raw);
@@ -675,10 +725,10 @@
 
         function showSaveIndicator() {
             const el = document.getElementById('saveStatus');
-            el.classList.add('text-emerald-600', 'bg-emerald-50');
-            setTimeout(() => {
-                el.classList.remove('text-emerald-600', 'bg-emerald-50');
-            }, 600);
+            el.textContent = hasUnsavedChanges ? '저장되지 않음' : '자동 저장됨';
+            el.classList.toggle('text-rose-600', hasUnsavedChanges);
+            el.classList.toggle('bg-rose-50', hasUnsavedChanges);
+            document.getElementById('saveWarning').classList.toggle('hidden', !hasUnsavedChanges);
         }
 
         // ==========================================
@@ -819,17 +869,25 @@
         async function handleImageSelect(event) {
             const files = Array.from(event.target.files || []).filter(f => f.type.startsWith('image/'));
             if (!files.length) return;
-
-            for (const file of files) {
-                try {
-                    const compressed = await compressImageFile(file);
-                    selectedImages.push(compressed);
-                } catch (err) {
-                    console.error('이미지 압축 실패:', err);
+            const selectionVersion = imageSelectionVersion;
+            pendingImageSelections++;
+            setAnalyzingUI(isAnalyzing);
+            try {
+                for (const file of files) {
+                    try {
+                        const compressed = await compressImageFile(file);
+                        if (selectionVersion !== imageSelectionVersion) break;
+                        selectedImages.push(compressed);
+                    } catch (err) {
+                        console.error('이미지 압축 실패:', err);
+                    }
                 }
+            } finally {
+                if (selectionVersion === imageSelectionVersion) pendingImageSelections--;
+                renderImagePreviews();
+                setAnalyzingUI(isAnalyzing);
+                event.target.value = '';
             }
-            renderImagePreviews();
-            event.target.value = '';
         }
 
         function renderImagePreviews() {
@@ -868,8 +926,19 @@
         }
 
         function clearAllSelectedImages() {
+            imageSelectionVersion++;
+            pendingImageSelections = 0;
             selectedImages = [];
+            document.getElementById('imageInput').value = '';
             renderImagePreviews();
+            setAnalyzingUI(isAnalyzing);
+        }
+
+        function clearAnalysisInputs() {
+            document.getElementById('textInput').value = '';
+            document.getElementById('brandInput').value = '';
+            pendingAnalysisSave = false;
+            clearAllSelectedImages();
         }
 
         // ==========================================
@@ -1046,6 +1115,14 @@
         // gemini-3.8-flash 고정 호출 + 스마트 503 재시도 + 실시간 취소 지원
         async function analyzeWithAI(useSearch = false) {
             if (isAnalyzing) return;
+            if (pendingAnalysisSave) {
+                retrySaveData();
+                return;
+            }
+            if (pendingImageSelections > 0) {
+                alert('사진 준비가 끝난 후 분석해주세요.');
+                return;
+            }
 
             const apiKey = document.getElementById('apiKey').value.trim();
             const textInput = document.getElementById('textInput').value.trim();
@@ -1160,9 +1237,9 @@ ${searchInstruction}
                     retryDelayMs = 1500 * (attempt + 1) + Math.random() * 250;
                     let response;
                     try {
-                        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
+                        response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
                             body: serializedBody,
                             signal
                         });
@@ -1232,6 +1309,7 @@ ${searchInstruction}
                 }
                 if (signal.aborted || analysisAbortController !== controller) return;
 
+                pendingAnalysisSave = true;
                 getCurrentFoodList(requestDate).push({
                     id: Date.now(),
                     name: parsed.name.trim(),
@@ -1243,10 +1321,6 @@ ${searchInstruction}
                     na: parsed.na
                 });
 
-                document.getElementById('textInput').value = '';
-                if (document.getElementById('brandInput')) document.getElementById('brandInput').value = '';
-                document.getElementById('imageInput').value = '';
-                clearAllSelectedImages();
                 updateUI(true);
 
             } catch (error) {
