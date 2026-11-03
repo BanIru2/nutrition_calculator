@@ -1,0 +1,141 @@
+{
+  "baselineCommit": "1faf48c",
+  "currentSourceSha256": "7d346dea89db9bc1ff40e76da896d63fa5cd9b6c4b740f202e8e16cc1293eb8e",
+  "checkedCases": 46,
+  "nodeVersion": "v24.14.0",
+  "platform": "win32",
+  "method": "Actual analyzeWithAI code in Node VM; mocked API transport 100 ms/request; virtual retry timers; jitter fixed at 0 for comparison. No real API calls.",
+  "payload": {
+    "syntheticImages": 3,
+    "decodedBytesEach": 262144,
+    "base64CharactersTotal": 1048584
+  },
+  "comparison": {
+    "success": {
+      "baseline": {
+        "requests": 1,
+        "simulatedElapsedMs": 100,
+        "serializations": 1,
+        "serializedUtf8BytesTotal": 1050540,
+        "savedRecords": 1,
+        "remainingAbortListeners": 0
+      },
+      "current": {
+        "requests": 1,
+        "simulatedElapsedMs": 100,
+        "serializations": 1,
+        "serializedUtf8BytesTotal": 1050540,
+        "savedRecords": 1,
+        "remainingAbortListeners": 0
+      }
+    },
+    "invalidRequest400": {
+      "baseline": {
+        "requests": 3,
+        "simulatedElapsedMs": 4800,
+        "serializations": 3,
+        "serializedUtf8BytesTotal": 3151620,
+        "savedRecords": 0,
+        "remainingAbortListeners": 2
+      },
+      "current": {
+        "requests": 1,
+        "simulatedElapsedMs": 100,
+        "serializations": 1,
+        "serializedUtf8BytesTotal": 1050540,
+        "savedRecords": 0,
+        "remainingAbortListeners": 0
+      }
+    },
+    "permission403": {
+      "baseline": {
+        "requests": 3,
+        "simulatedElapsedMs": 4800,
+        "serializations": 3,
+        "serializedUtf8BytesTotal": 3151620,
+        "savedRecords": 0,
+        "remainingAbortListeners": 2
+      },
+      "current": {
+        "requests": 1,
+        "simulatedElapsedMs": 100,
+        "serializations": 1,
+        "serializedUtf8BytesTotal": 1050540,
+        "savedRecords": 0,
+        "remainingAbortListeners": 0
+      }
+    },
+    "dailyQuota429": {
+      "baseline": {
+        "requests": 3,
+        "simulatedElapsedMs": 4800,
+        "serializations": 3,
+        "serializedUtf8BytesTotal": 3151620,
+        "savedRecords": 0,
+        "remainingAbortListeners": 2
+      },
+      "current": {
+        "requests": 1,
+        "simulatedElapsedMs": 100,
+        "serializations": 1,
+        "serializedUtf8BytesTotal": 1050540,
+        "savedRecords": 0,
+        "remainingAbortListeners": 0
+      }
+    },
+    "overload503ThenSuccess": {
+      "baseline": {
+        "requests": 3,
+        "simulatedElapsedMs": 4800,
+        "serializations": 3,
+        "serializedUtf8BytesTotal": 3151620,
+        "savedRecords": 1,
+        "remainingAbortListeners": 2
+      },
+      "current": {
+        "requests": 3,
+        "simulatedElapsedMs": 4800,
+        "serializations": 1,
+        "serializedUtf8BytesTotal": 1050540,
+        "savedRecords": 1,
+        "remainingAbortListeners": 0
+      }
+    },
+    "invalidModelOutput": {
+      "baseline": {
+        "requests": 1,
+        "simulatedElapsedMs": 100,
+        "serializations": 1,
+        "serializedUtf8BytesTotal": 1050540,
+        "savedRecords": 1,
+        "remainingAbortListeners": 0
+      },
+      "current": {
+        "requests": 1,
+        "simulatedElapsedMs": 100,
+        "serializations": 1,
+        "serializedUtf8BytesTotal": 1050540,
+        "savedRecords": 0,
+        "remainingAbortListeners": 0
+      }
+    }
+  },
+  "productionJitterMsPerRetry": {
+    "minimum": 0,
+    "maximumExclusive": 250
+  },
+  "serializationCpuMedianMs": {
+    "samplesPerVersion": 25,
+    "baseline": 6.592300000000023,
+    "current": 2.2864000000000715
+  },
+  "memory": {
+    "baseline": {
+      "sampledRetainedHeapMedianBytes": 2289648
+    },
+    "current": {
+      "sampledRetainedHeapMedianBytes": 2299504
+    }
+  },
+  "memoryLimit": "Fresh Node process per version, five runs, forced GC at fetch boundaries and completion. Sampled retained JS heap only; excludes browser/native fetch/image memory and is not a peak-memory measurement."
+}
