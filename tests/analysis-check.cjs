@@ -72,7 +72,7 @@ function harness(source, responses = [{}], options = {}) {
   }
   const context = vm.createContext({
     document: { getElementById: id => elements[id] },
-    analysisAbortController: null, isAnalyzing: false,
+    analysisAbortController: null, isAnalyzing: false, selectedDate: '2026-11-04',
     analysisSpeedMode: options.speed || 'fast', selectedImages: options.images || [],
     AbortController: TrackedController, DOMException,
     Math: Object.assign(Object.create(Math), { random: () => options.random || 0 }),

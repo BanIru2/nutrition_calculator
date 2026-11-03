@@ -192,6 +192,7 @@
 
                 <!-- AI Input Mode -->
                 <div id="mode-ai" class="space-y-4">
+                    <fieldset id="analysisInputs" class="min-w-0 space-y-4 disabled:opacity-60">
                     <div>
                         <div class="flex justify-between items-center mb-1">
                             <label class="block text-sm font-medium text-slate-700">음식 사진 업로드 (자동 압축)</label>
@@ -239,6 +240,8 @@
                                 class="w-full border border-slate-300 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
                         </div>
                     </div>
+
+                    </fieldset>
 
                     <!-- 분석 모드 선택 토글 (빠른 모드 vs 정밀 모드) -->
                     <div class="flex items-center justify-between bg-slate-100 p-1 rounded-xl text-xs">
@@ -473,6 +476,7 @@
             const normalGroup = document.getElementById('normalBtnGroup');
             const loadingGroup = document.getElementById('loadingBtnGroup');
             const statusSpan = document.getElementById('activeStatusText');
+            document.getElementById('analysisInputs').disabled = analyzing;
 
             if (analyzing) {
                 if (normalGroup) normalGroup.classList.add('hidden');
@@ -504,11 +508,11 @@
             return new Date(now.getTime() - offset).toISOString().split('T')[0];
         }
 
-        function getCurrentFoodList() {
-            if (!dailyRecords[selectedDate]) {
-                dailyRecords[selectedDate] = [];
+        function getCurrentFoodList(date = selectedDate) {
+            if (!dailyRecords[date]) {
+                dailyRecords[date] = [];
             }
-            return dailyRecords[selectedDate];
+            return dailyRecords[date];
         }
 
         // ==========================================
@@ -834,6 +838,7 @@
             const countBadge = document.getElementById('imageCountBadge');
 
             if (selectedImages.length === 0) {
+                listEl.replaceChildren();
                 container.classList.add('hidden');
                 placeholder.classList.remove('hidden');
                 countBadge.classList.add('hidden');
@@ -1040,6 +1045,7 @@
             const apiKey = document.getElementById('apiKey').value.trim();
             const textInput = document.getElementById('textInput').value.trim();
             const brandInput = (document.getElementById('brandInput')?.value || '').trim();
+            const requestDate = selectedDate;
 
             if (selectedImages.length === 0 && !textInput && !brandInput) {
                 alert('음식 사진을 업로드하거나 브랜드/음식 설명을 입력해주세요!');
@@ -1221,7 +1227,7 @@ ${searchInstruction}
                 }
                 if (signal.aborted || analysisAbortController !== controller) return;
 
-                getCurrentFoodList().push({
+                getCurrentFoodList(requestDate).push({
                     id: Date.now(),
                     name: parsed.name.trim(),
                     cal: parsed.cal,
