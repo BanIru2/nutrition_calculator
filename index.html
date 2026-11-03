@@ -224,10 +224,37 @@
                         </div>
                     </div>
 
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">음식 설명 텍스트 / 제품명</label>
-                        <textarea id="textInput" rows="2" placeholder="예: 펩시제로 라임 250ml, 김치찌개 건더기 위주 반 공기" 
-                            class="w-full border border-slate-300 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+                    <div class="space-y-2">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
+                                <i data-lucide="store" class="w-3.5 h-3.5 text-slate-400"></i> 브랜드 / 카페 / 제조사명 (선택사항)
+                            </label>
+                            <input type="text" id="brandInput" placeholder="예: 솔티라이엇, 스타벅스, 맘스터치 등 (상호명 편향 방지)" 
+                                class="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">음식 설명 텍스트 / 메뉴명</label>
+                            <textarea id="textInput" rows="2" placeholder="예: 밤시나몬라떼 1잔 덜 달게, 김치찌개 건더기 위주 반 공기" 
+                                class="w-full border border-slate-300 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- 분석 모드 선택 토글 (빠른 모드 vs 정밀 모드) -->
+                    <div class="flex items-center justify-between bg-slate-100 p-1 rounded-xl text-xs">
+                        <span class="text-slate-500 font-semibold pl-2 flex items-center gap-1">
+                            <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 text-slate-400"></i> 분석 모드
+                        </span>
+                        <div class="flex gap-1">
+                            <button type="button" id="modeFastBtn" onclick="setAnalysisMode('fast')" 
+                                class="px-2.5 py-1 rounded-lg font-semibold transition bg-white text-emerald-700 shadow-xs flex items-center gap-1">
+                                <span>⚡ 빠른 모드 (3~4초)</span>
+                            </button>
+                            <button type="button" id="modeDeepBtn" onclick="setAnalysisMode('deep')" 
+                                class="px-2.5 py-1 rounded-lg font-semibold transition text-slate-500 hover:text-slate-800 flex items-center gap-1">
+                                <span>🧠 정밀 모드 (심층 추론)</span>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- 분리된 2개의 분석 버튼 & 실시간 진행/취소 UI -->
@@ -418,6 +445,21 @@
         let weeklyChartInstance = null;
         let analysisAbortController = null;
         let isAnalyzing = false;
+        let analysisSpeedMode = 'fast'; // 'fast' (LOW) 또는 'deep' (MEDIUM)
+
+        function setAnalysisMode(mode) {
+            analysisSpeedMode = mode;
+            const fastBtn = document.getElementById('modeFastBtn');
+            const deepBtn = document.getElementById('modeDeepBtn');
+            if (!fastBtn || !deepBtn) return;
+            if (mode === 'fast') {
+                fastBtn.className = 'px-2.5 py-1 rounded-lg font-semibold transition bg-white text-emerald-700 shadow-xs flex items-center gap-1';
+                deepBtn.className = 'px-2.5 py-1 rounded-lg font-semibold transition text-slate-500 hover:text-slate-800 flex items-center gap-1';
+            } else {
+                deepBtn.className = 'px-2.5 py-1 rounded-lg font-semibold transition bg-white text-emerald-700 shadow-xs flex items-center gap-1';
+                fastBtn.className = 'px-2.5 py-1 rounded-lg font-semibold transition text-slate-500 hover:text-slate-800 flex items-center gap-1';
+            }
+        }
 
         // 다른 앱 전환(카톡 등) 후 복귀 시 무한 로딩 방지 및 상태 점검
         document.addEventListener('visibilitychange', () => {
@@ -728,7 +770,7 @@
         }
 
         // 고해상도 사진을 최대 1024px JPEG로 압축하여 전송 속도 향상
-        function compressImageFile(file, maxSize = 1024, quality = 0.8) {
+        function compressImageFile(file, maxSize = 768, quality = 0.8) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = function(e) {
@@ -995,9 +1037,10 @@
         async function analyzeWithAI(useSearch = false) {
             const apiKey = document.getElementById('apiKey').value.trim();
             const textInput = document.getElementById('textInput').value.trim();
+            const brandInput = (document.getElementById('brandInput')?.value || '').trim();
 
-            if (selectedImages.length === 0 && !textInput) {
-                alert('음식 사진을 1장 이상 업로드하거나 텍스트 설명을 입력해주세요!');
+            if (selectedImages.length === 0 && !textInput && !brandInput) {
+                alert('음식 사진을 업로드하거나 브랜드/음식 설명을 입력해주세요!');
                 return;
             }
 
@@ -1050,9 +1093,16 @@ ${searchInstruction}
     "na": 총 나트륨(mg, 숫자)
 }`;
 
-                const userTextContent = textInput 
-                    ? `[분석 요청 음식 설명]: ${textInput}` 
-                    : '첨부된 사진에 나온 음식들의 영양 성분을 분석해주세요.';
+                let userTextContent = '';
+                if (brandInput && textInput) {
+                    userTextContent = `[브랜드/매장명 (상호명 식별용)]: ${brandInput}\n[음식/메뉴 설명]: ${textInput}`;
+                } else if (brandInput) {
+                    userTextContent = `[브랜드/매장명 (상호명 식별용)]: ${brandInput}\n[음식/메뉴 설명]: 사진에 나온 음식`;
+                } else if (textInput) {
+                    userTextContent = `[음식/메뉴 설명]: ${textInput}`;
+                } else {
+                    userTextContent = '첨부된 사진에 나온 음식들의 영양 성분을 분석해주세요.';
+                }
 
                 const parts = [{ text: userTextContent }];
                 selectedImages.forEach(img => {
@@ -1071,7 +1121,11 @@ ${searchInstruction}
                 if (useSearch) {
                     requestBody.tools = [{ google_search: {} }];
                 } else {
-                    requestBody.generationConfig = { responseMimeType: "application/json" };
+                    const genConfig = { responseMimeType: "application/json" };
+                    if (analysisSpeedMode === 'fast') {
+                        genConfig.thinkingConfig = { thinkingLevel: "LOW" };
+                    }
+                    requestBody.generationConfig = genConfig;
                 }
 
                 // 503 과부하 스마트 재시도 루프 (최대 2회 재시도, 취소 버튼 상시 작동)
@@ -1180,6 +1234,7 @@ ${searchInstruction}
                 });
 
                 document.getElementById('textInput').value = '';
+                if (document.getElementById('brandInput')) document.getElementById('brandInput').value = '';
                 document.getElementById('imageInput').value = '';
                 clearAllSelectedImages();
                 updateUI(true);
