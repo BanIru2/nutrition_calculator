@@ -616,10 +616,10 @@
                 desc = '입력하신 Gemini API 키가 올바르지 않거나 권한이 없습니다.';
                 action = '💡 우측 상단의 API 키 입력란에서 올바른 키인지 확인해 주세요. (우측 "발급" 링크 참조)';
             } else if (statusNum === 400 || fullText.includes('bad request') || fullText.includes('invalid_argument')) {
-                icon = '🖼️';
-                title = '요청 형식 오류 (400 Bad Request)';
-                desc = '사진 데이터 형식이 맞지 않거나 전송 규격 오류가 발생했습니다.';
-                action = '💡 사진을 다시 선택하거나, 사진 장수를 줄여서 다시 시도해 주세요.';
+                icon = '❌';
+                title = '요청 데이터 규격 오류 (400 Bad Request)';
+                desc = 'AI 요청 데이터 규격에 문제가 발생했습니다.';
+                action = '💡 사진이나 입력 내용을 확인하신 후 다시 시도해 주세요. (하단 [상세 원본 오류 내용] 참조)';
             } else if (statusNum === 0 || fullText.includes('failed to fetch') || fullText.includes('networkerror') || fullText.includes('connection')) {
                 icon = '📡';
                 title = '네트워크 연결 끊김';
@@ -981,10 +981,12 @@
                         ctx.drawImage(img, 0, 0, width, height);
 
                         const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+                        const base64Data = compressedDataUrl.split(',')[1];
                         resolve({
                             id: Date.now() + Math.random(),
                             mimeType: 'image/jpeg',
-                            data: compressedDataUrl.split(',')[1],
+                            data: base64Data,
+                            base64: base64Data,
                             previewUrl: compressedDataUrl
                         });
                     };
@@ -1286,12 +1288,15 @@
                 // 압축된 이미지 데이터를 Base64 parts로 변환
                 const parts = [];
                 for (const img of selectedImages) {
-                    parts.push({
-                        inlineData: {
-                            mimeType: img.mimeType || 'image/jpeg',
-                            data: img.base64
-                        }
-                    });
+                    const imgData = img.data || img.base64;
+                    if (imgData) {
+                        parts.push({
+                            inline_data: {
+                                mime_type: img.mimeType || 'image/jpeg',
+                                data: imgData
+                            }
+                        });
+                    }
                 }
 
                 let promptText = "음식 사진과 설명을 기반으로 영양성분을 정밀 추정해주세요.";
